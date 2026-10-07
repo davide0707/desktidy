@@ -5,14 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "desktidy"
 dynamic = ["version"]
-description = "Keeps Downloads, Desktop and Documents tidy: understands what each file is about and files it in the right folder - offline first, Claude AI only when needed, for fractions of a cent."
+description = "Keeps Downloads, Desktop and Documents tidy: understands what each file is about, renames it and files it in the right folder - offline first, with a free or paid AI (Groq, Gemini, Ollama, Claude, OpenAI...) only when needed."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "Di Filippo Davide" }]
-keywords = ["file-organizer", "downloads", "desktop", "automation", "windows", "ocr", "claude", "productivity",
-            "declutter", "file-management"]
+keywords = ["file-organizer", "downloads", "desktop", "automation", "windows", "ocr", "claude", "gemini", "groq",
+            "ollama", "openai", "productivity", "declutter", "file-management"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Environment :: Console",

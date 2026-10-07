@@ -285,13 +285,18 @@ class Service:
 
     # ------------------------------------------------ the AI
     def dispatch(self, items: list[tuple], cfg: config.Config) -> list[str]:
-        from . import ai  # loaded only when needed: the anthropic library is slow to import
+        from . import ai, providers
         key = ai.ready(cfg, log)
         allowed = usage.files_left_today(cfg) if key else 0
         done = []
         for path, is_dir, base, _an, d, plan in items[allowed:]:  # beyond the daily limit: offline decision
             done += self.finish(cfg, path, is_dir, base, d.dest, d.reason, plan.new_stem or plan.fallback, plan.reason)
         work = [ai.item_for(path, is_dir, base, an, d, plan, cfg) for path, is_dir, base, an, d, plan in items[:allowed]]
+        if work and not providers.current(cfg).vision:  # a text-only service can't judge a picture without text
+            blind = [i for i in work if ai.needs_image(i)]
+            work = [i for i in work if not ai.needs_image(i)]
+            for item in blind:
+                done += self.finish_item(item, None, cfg)
         instant = config.ai_delivery(cfg) == "instant" or self.opts.dry_run
         for start in range(0, len(work), ai.MAX_FILES_PER_REQUEST):
             chunk = work[start:start + ai.MAX_FILES_PER_REQUEST]

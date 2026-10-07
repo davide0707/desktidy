@@ -136,12 +136,15 @@ def summary_line() -> str:
         state = f"{C.G}● RUNNING{C.X}"
     else:
         state = f"{C.R}● STOPPED{C.X}"
+    from . import providers
     try:
-        mode = config.ai_mode(config.load_config())
+        cfg = config.load_config()
+        mode, p = config.ai_mode(cfg), providers.current(cfg)
+        service = f" {C.GR}({p.id}){C.X}"
+        key = f" {C.Y}(no key){C.X}" if mode != "off" and p.key_env and not winapi.api_key(p.key_env) else ""
     except Exception:
-        mode = "?"
-    key = "" if winapi.api_key() else f" {C.Y}(no key){C.X}"
-    return (f"{state}   {C.GR}|{C.X}   AI: {C.CY}{mode}{C.X}{key}   {C.GR}|{C.X}   "
+        mode, service, key = "?", "", ""
+    return (f"{state}   {C.GR}|{C.X}   AI: {C.CY}{mode}{C.X}{service}{key}   {C.GR}|{C.X}   "
             f"AI spend: {usd(usage.read()['total_usd'], 2)}")
 
 
@@ -247,7 +250,8 @@ def cmd_guide(args):
 
 
 def cmd_setup(args):
-    """First-run setup: accept the house rules, pin enough folders, optionally set the AI key."""
+    """First-run setup: accept the house rules, pin enough folders, optionally choose an AI service."""
+    global INTERACTIVE
     cfg = config.load_config()
     needed = config.pinned_minimum(cfg)
     title("Setup")
@@ -283,9 +287,16 @@ def cmd_setup(args):
         ok(f"Pinned {C.BOLD}{os.path.basename(target)}{C.X}  {C.GR}{config.short(target)}{C.X}")
     ok(f"{C.BOLD}Setup complete{C.X}: DeskTidy starts tidying at its next pass (within 30 seconds)")
     can_ask = (INTERACTIVE or sys.stdin.isatty()) and "--accept" not in args
-    if can_ask and not winapi.api_key() and confirm("Use Claude AI for the files DeskTidy can't place by itself? "
-                                                    "(needs an API key)"):
-        cmd_key([])
+    if can_ask and confirm("Use an AI for the files DeskTidy can't place by itself? (free options available)"):
+        title("Choose the AI service")
+        ids = provider_table(cfg)
+        choice = ask("Number or name (Enter = groq, free):").lower() or "groq"
+        pid = ids[int(choice) - 1] if choice.isdigit() and 1 <= int(choice) <= len(ids) else choice
+        was, INTERACTIVE = INTERACTIVE, True  # so choose_provider offers to paste the key
+        try:
+            choose_provider(pid)
+        finally:
+            INTERACTIVE = was
     if not running():
         hint(f"  The service is not running: {C.W}desktidy start{C.X}")
 
@@ -318,15 +329,18 @@ def cmd_status(args):
     watched =", ".join(f"{os.path.basename(cfg.expand(w['path']))} ({w.get('wait_seconds', 120) // 60} min)"
                         for w in cfg["watched_folders"])
     row("Watching", watched)
-    mode = config.ai_mode(cfg)
+    from . import providers
+    mode, p = config.ai_mode(cfg), providers.current(cfg)
     row("AI", f"{C.CY}{mode}{C.X} - {config.AI_MODES[mode][0]}" + (
-        "" if mode == "off" else f" {C.GR}(max {config.daily_limit(cfg)}/day, {config.ai_model(cfg)}, "
-                                 f"{config.ai_delivery(cfg)}){C.X}"))
-    key = winapi.api_key()
-    if key:
-        row("API key", winapi.mask(key))
-    elif mode != "off":
-        row("API key", f"{C.Y}none{C.X} - the AI can't work: desktidy key", f"{C.Y}[!]{C.X}")
+        "" if mode == "off" else f" {C.GR}(max {config.daily_limit(cfg)}/day){C.X}"))
+    if mode != "off":
+        row("AI service", f"{p.name} · {config.ai_model(cfg)} · {config.ai_delivery(cfg)}"
+                          + (f" · {C.G}free{C.X}" if p.free else ""))
+        key = winapi.api_key(p.key_env)
+        if key:
+            row("API key", winapi.mask(key))
+        elif p.key_env:
+            row("API key", f"{C.Y}none{C.X} - the AI can't work: desktidy key", f"{C.Y}[!]{C.X}")
     u = usage.read()
     row("AI spend", f"today {usd(u['today_usd'])} ({u['today_files']} files) · total {usd(u['total_usd'])} · "
                     f"budget {usd(cfg.ai.get('budget_usd', 5.0), 2)}")
@@ -734,20 +748,24 @@ def cmd_explain(args):
     else:
         row("AI", f"not needed (mode {config.ai_mode(cfg)})")
     if use_ai:
-        from . import ai
+        from . import ai, providers
+        p = providers.current(cfg)
         key = ai.ready(cfg, print)
         if not key:
             fail("The AI is not available (desktidy status)")
             return
-        if not confirm("Really ask Claude? (about $0.001)", default_yes=True):
+        price = "free plan" if p.free else "about $0.001"
+        if not confirm(f"Really ask {p.name}? ({price})", default_yes=True):
             return
         item = ai.item_for(target, is_dir, os.path.dirname(target), an, d, plan, cfg)
         answer = (ai.ask([item], cfg, key, lambda m: hint(m)) or {}).get(1)
         if answer:
-            row("Claude", f"{C.G}{config.short(answer.folder) if answer.folder else 'none fits'}{C.X} "
-                          f"{C.GR}({answer.confidence}: {answer.why}){C.X}", f"{C.G}[+]{C.X}")
+            row(p.name, f"{C.G}{config.short(answer.folder) if answer.folder else 'none fits'}{C.X} "
+                        f"{C.GR}({answer.confidence}: {answer.why}){C.X}", f"{C.G}[+]{C.X}")
             if answer.name:
-                row("Claude's name", answer.name)
+                row("Suggested name", answer.name)
+        else:
+            warn("No usable answer (desktidy log errors)")
 
 
 def cmd_preview(args):
@@ -821,10 +839,16 @@ def cmd_spend(args):
 
     cfg = config.load_config()
     u = usage.read()
-    model = config.ai_model(cfg)
-    price_in, price_out = config.PRICES.get(model, (0, 0))
+    from . import providers
+    p, model, price = providers.current(cfg), config.ai_model(cfg), providers.prices(cfg)
     title("AI spend")
-    row("Model", f"{model}  {C.GR}(${price_in:g} in / ${price_out:g} out per million tokens; batch = half){C.X}")
+    if price is None:
+        cost = f'{C.Y}price unknown{C.X} (set "price_per_million" in rules.json)'
+    elif not any(price):
+        cost = f"{C.G}free plan{C.X}"
+    else:
+        cost = f"${price[0]:g} in / ${price[1]:g} out per million tokens" + ("; batch = half" if p.batch else "")
+    row("Model", f"{p.name} · {model}  {C.GR}({cost}{C.GR}){C.X}")
     today = date.today()
     row("Today", f"{usd(u['today_usd'])}   {u['today_files']} files   {C.GR}(limit {config.daily_limit(cfg)}/day){C.X}")
     f7, s7 = usage.between(u, (today - timedelta(days=6)).isoformat())
@@ -877,30 +901,100 @@ AI_ALIASES = {
 }
 
 
+def provider_table(cfg) -> list:
+    """Print the AI services, numbered; returns their ids in the same order."""
+    from . import providers
+    current = providers.provider_id(cfg)
+    ids = list(providers.PROVIDERS)
+    for i, pid in enumerate(ids, 1):
+        p = providers.PROVIDERS[pid]
+        mark = f"{C.G}●{C.X}" if pid == current else f"{C.GR}○{C.X}"
+        if p.free:
+            cost = f"{C.G}FREE{C.X} - {p.free}"
+        else:
+            cost = "your own server: usually free" if p.local else f"{C.Y}paid{C.X}"
+        if not p.key_env or p.local:
+            key_state = ""
+        else:
+            key_state = f"  {C.GR}·{C.X} {C.G}key set{C.X}" if winapi.api_key(p.key_env) else f"  {C.GR}· no key{C.X}"
+        print(f"   {mark} {C.W}{i}){C.X} {C.BOLD}{pid:<11}{C.X}{p.name}{key_state}\n"
+              f"        {cost}\n        {C.GR}model {p.model or '(set one)'} · {p.privacy}"
+              f"{' · reads images' if p.vision else ' · text only'}{C.X}")
+    return ids
+
+
+def choose_provider(pid: str) -> bool:
+    from . import providers
+    pid = pid.lower()
+    if pid not in providers.PROVIDERS:
+        fail(f"Unknown service '{pid}'. Choose: {', '.join(providers.PROVIDERS)}")
+        return False
+
+    def change(d):
+        ai = d.setdefault("ai", {})
+        ai["provider"] = pid
+        for k in ("model", "base_url", "vision", "price_per_million"):
+            ai.pop(k, None)  # the new service's defaults apply
+    config.update_config(change)
+    p = providers.PROVIDERS[pid]
+    ok(f"AI service: {C.BOLD}{p.name}{C.X} (model {p.model or 'to be set'})" + (f" - {C.G}free{C.X}" if p.free else ""))
+    if p.privacy:
+        info(p.privacy)
+    if pid == "ollama":
+        info("Install Ollama from ollama.com, then:  ollama pull " + p.model)
+    elif pid == "custom":
+        info('Set the server in rules.json: "ai": {"base_url": "http://localhost:1234/v1", "model": "..."}')
+    if p.key_env and not winapi.api_key(p.key_env):
+        warn(f"no {p.name} key yet: {C.W}desktidy key{C.X}  (get one at {p.key_url})")
+        if INTERACTIVE and confirm("Paste the key now?", default_yes=True):
+            cmd_key([])
+    return True
+
+
 def cmd_ai(args):
+    from . import providers
     cfg = config.load_config()
     current = config.ai_mode(cfg)
     sub = args[0].lower() if args else ""
-    value = args[1].lower() if len(args) > 1 else ""
+    raw = args[1] if len(args) > 1 else ""
+    value = raw.lower()
+    if sub in ("provider", "service", "providers", "services"):
+        if raw:
+            choose_provider(raw)
+            return
+        title("AI services")
+        ids = provider_table(cfg)
+        hint("\n  Free and private: groq (cloud, not used for training) or ollama (on this PC).\n"
+             "  Switch with: desktidy ai provider <name>   then: desktidy key")
+        if INTERACTIVE:
+            choice = ask("Number or name (Enter = keep):").lower()
+            if choice:
+                choose_provider(ids[int(choice) - 1] if choice.isdigit() and 1 <= int(choice) <= len(ids) else choice)
+        return
     if sub == "max":
         if value == "auto":
             config.update_config(lambda d: d["ai"].pop("max_files_per_day", None))
             ok(f"Daily limit: the mode's default ({config.AI_MODES[current][1]} files)")
         elif value.isdigit():
             config.update_config(lambda d: d["ai"].__setitem__("max_files_per_day", int(value)))
-            ok(f"Claude will look at {value} files a day at most")
+            ok(f"The AI will look at {value} files a day at most")
         else:
             fail("Examples:  desktidy ai max 20   ·   desktidy ai max auto")
         return
     if sub == "model":
-        model = config.MODELS.get(value, value if value in config.PRICES else None)
-        if not model:
-            fail("Models: haiku (cheapest, recommended), sonnet, opus")
+        if not raw:
+            fail("Example: desktidy ai model haiku   (Claude: haiku, sonnet, opus; other services: the model id)")
             return
+        model = providers.CLAUDE_MODELS.get(value, raw) if providers.provider_id(cfg) == "claude" else raw
         config.update_config(lambda d: d["ai"].__setitem__("model", model))
-        ok(f"Model: {model} (${config.PRICES[model][0]:g} / ${config.PRICES[model][1]:g} per million tokens)")
-        if model != "claude-haiku-4-5":
-            warn("costs more than haiku, which is plenty to pick a folder")
+        price = providers.prices(config.load_config())
+        if price is None:
+            ok(f"Model: {model}")
+            warn('unknown price: add  "price_per_million": [input, output]  to the ai section of rules.json')
+        elif any(price):
+            ok(f"Model: {model} (${price[0]:g} / ${price[1]:g} per million tokens)")
+        else:
+            ok(f"Model: {model} (free plan)")
         return
     if sub == "confidence":
         if value not in ("high", "medium"):
@@ -911,21 +1005,23 @@ def cmd_ai(args):
         return
     if sub == "delivery":
         if value not in ("batch", "instant"):
-            fail("Type batch (half price, answer in minutes - recommended) or instant (full price, seconds)")
+            fail("Type batch (half price, answer in minutes - Claude only) or instant (answer in seconds)")
             return
         config.update_config(lambda d: d["ai"].__setitem__("delivery", value))
-        ok(f"AI delivery: {value}")
+        note = "" if providers.current(cfg).batch else " (applies to Claude; the other services always answer at once)"
+        ok(f"AI delivery: {value}{note}")
         return
     if not sub:
-        title("How much to use the AI (Claude)")
+        p = providers.current(cfg)
+        title(f"How much to use the AI ({p.name})")
         for i, (mode, (text, limit)) in enumerate(config.AI_MODES.items()):
             mark = f"{C.G}●{C.X}" if mode == current else f"{C.GR}○{C.X}"
             per_day = f" {C.GR}(max {limit}/day){C.X}" if limit else ""
             print(f"   {mark} {C.W}{i}){C.X} {C.BOLD}{mode:<9}{C.X} {text}{per_day}")
-        hint(f"\n  Model {config.ai_model(cfg)} · delivery {config.ai_delivery(cfg)} · min confidence "
-             f"{cfg.ai.get('min_confidence', 'high')}\n"
-             "  More: desktidy ai max <n>  ·  ai model haiku|sonnet|opus  ·  ai delivery batch|instant  ·  "
-             "ai confidence high|medium")
+        hint(f"\n  Service {p.id} · model {config.ai_model(cfg)} · delivery {config.ai_delivery(cfg)} · "
+             f"min confidence {cfg.ai.get('min_confidence', 'high')}\n"
+             "  More: desktidy ai provider (Claude, OpenAI, Gemini, Groq, Mistral, OpenRouter, Ollama)  ·  ai max <n>\n"
+             "        ai model <name>  ·  ai delivery batch|instant  ·  ai confidence high|medium")
         if not INTERACTIVE:
             return
         sub = ask("New mode (0-3 or name, Enter = keep):").lower()
@@ -933,7 +1029,7 @@ def cmd_ai(args):
             return
     mode = AI_ALIASES.get(sub)
     if not mode:
-        fail(f"Unknown mode '{sub}'. Choose: off, limited, moderate, ai-only")
+        fail(f"Unknown mode '{sub}'. Choose: off, limited, moderate, ai-only  (or: ai provider)")
         return
 
     def change(d):
@@ -943,54 +1039,65 @@ def cmd_ai(args):
     text, limit = config.AI_MODES[mode]
     ok(f"AI: {C.BOLD}{mode}{C.X} - {text}" + (f" (max {limit} files/day)" if limit else ""))
     info("Applies from the next pass (within 30 seconds), no restart needed")
-    if mode != "off" and not winapi.api_key():
-        warn(f"no API key yet: {C.W}desktidy key{C.X}")
+    p = providers.current(cfg)
+    if mode != "off" and p.key_env and not winapi.api_key(p.key_env):
+        warn(f"no {p.name} key yet: {C.W}desktidy key{C.X}")
 
 
 def cmd_key(args):
+    from . import providers
+    cfg = config.load_config()
+    p = providers.current(cfg)
+    if not p.key_env:
+        info(f"{p.name} needs no API key." + (" Make sure Ollama is running." if p.id == "ollama" else ""))
+        _test_key(None, cfg)
+        return
     sub = args[0] if args else ""
-    current = winapi.api_key()
+    current = winapi.api_key(p.key_env)
     if sub.lower() in ("remove", "delete", "clear"):
-        winapi.set_api_key(None)
-        ok("Key removed: the AI won't be used until you set a new one")
+        winapi.set_api_key(None, p.key_env)
+        ok(f"{p.name} key removed")
         return
     if sub.lower() in ("test", "check"):
         if not current:
-            fail("No key set")
+            fail(f"No {p.name} key set")
             return
-        _test_key(current)
+        _test_key(current, cfg)
         return
     new = sub
     if not new:
-        info(f"Current key: {winapi.mask(current)}")
+        info(f"{p.name} key ({p.key_env}): {winapi.mask(current)}")
         if not INTERACTIVE and not sys.stdin.isatty():
-            hint("Usage: desktidy key <NEW-KEY>   ·   desktidy key test   ·   desktidy key remove")
+            hint("Usage: desktidy key <NEW-KEY>   ·   desktidy key test   ·   desktidy key remove\n"
+                 "  (for another service first: desktidy ai provider <name>)")
             return
-        info(f"Create one at {config.KEYS_URL} (it stays hidden while you paste it)")
+        if p.key_url:
+            info(f"Get one at {p.key_url} (it stays hidden while you paste it)")
         try:
-            new = getpass.getpass(f"  {C.CY}[?]{C.X} Paste the new key (Enter = cancel): ").strip()
+            new = getpass.getpass(f"  {C.CY}[?]{C.X} Paste the new {p.name} key (Enter = cancel): ").strip()
         except (EOFError, KeyboardInterrupt):
             print()
             return
         if not new:
             return
-    if not new.startswith("sk-ant-") and not confirm("Keys usually start with 'sk-ant-'. Save it anyway?"):
+    looks_wrong = p.id == "claude" and not new.startswith("sk-ant-")
+    if looks_wrong and not confirm("Claude keys start with 'sk-ant-'. Save it anyway?"):
         return
-    if _test_key(new) is False and not confirm("The key was rejected. Save it anyway?"):
+    if _test_key(new, cfg) is False and not confirm("The key was rejected. Save it anyway?"):
         return
-    winapi.set_api_key(new)
+    winapi.set_api_key(new, p.key_env)
     usage.clear_warning()
-    ok(f"Key saved ({winapi.mask(new)}). The service uses it right away, no restart needed.")
+    ok(f"{p.name} key saved ({winapi.mask(new)}). The service uses it right away, no restart needed.")
 
 
-def _test_key(key: str) -> bool | None:
-    try:
-        from . import ai
-    except ImportError:
-        warn("the anthropic library is not installed: can't verify the key")
+def _test_key(key: str | None, cfg) -> bool | None:
+    from . import ai, providers
+    p = providers.current(cfg)
+    if not ai.available(cfg):
+        warn("the anthropic library is not installed: pip install anthropic")
         return None
-    info("Checking the key with Anthropic (free)...")
-    valid, message = ai.check_key(key)
+    info(f"Checking with {p.name} (free)...")
+    valid, message = ai.check_key(key, cfg)
     (ok if valid else fail if valid is False else warn)(message)
     return valid
 
@@ -1064,8 +1171,8 @@ def cmd_install(args):
         warn("The service did not start yet: desktidy status")
     if folders.setup_missing(config.load_config()) and sys.stdin.isatty():
         cmd_setup([])
-    elif not winapi.api_key():
-        info(f"Optional AI: {C.W}desktidy key{C.X}  (without a key DeskTidy works offline)")
+    else:
+        info(f"Optional AI: {C.W}desktidy ai provider{C.X} (free options included); without it DeskTidy works offline")
 
 
 def cmd_uninstall(args):
@@ -1131,6 +1238,8 @@ def find_command(name: str):
         return unpin_folder
     if name == "errors":
         return lambda a: cmd_log(["errors", *a])
+    if name in ("provider", "providers"):
+        return lambda a: cmd_ai(["provider", *a])
     for number, cmd, func, _, aliases, _ in COMMANDS:
         if name in (str(number), cmd) or name in aliases:
             return func

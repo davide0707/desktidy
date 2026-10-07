@@ -38,10 +38,12 @@ AI_MODES = {  # mode: (what it does, files per day)
     "ai-only": ("for every file except private ones; rules are the fallback", 100),
 }
 MODELS = {"haiku": "claude-haiku-4-5", "sonnet": "claude-sonnet-5-5", "opus": "claude-opus-5-5"}
-PRICES = {  # USD per million tokens (input, output)
+PRICES = {  # USD per million tokens (input, output) of the paid models; free plans cost nothing
     "claude-haiku-4-5": (1.0, 5.0),
     "claude-sonnet-5-5": (2.0, 10.0),
     "claude-opus-5-5": (4.0, 20.0),
+    "gpt-5-nano": (0.05, 0.40),
+    "gpt-5-mini": (0.25, 2.0),
 }
 RENAME_MODES = {
     "smart": "generic names and names that don't match the content",
@@ -141,12 +143,15 @@ def daily_limit(cfg: dict) -> int:
 
 
 def ai_model(cfg: dict) -> str:
-    model = cfg.get("ai", {}).get("model", "claude-haiku-4-5")
-    return MODELS.get(model, model)
+    from .providers import model
+    return model(cfg)
 
 
 def ai_delivery(cfg: dict) -> str:
-    """batch = half price, answer usually within minutes; instant = full price, answer in seconds."""
+    """batch = half price, answer usually within minutes (Claude only); instant = answer in seconds."""
+    from .providers import current
+    if not current(cfg).batch:
+        return "instant"
     return "instant" if cfg.get("ai", {}).get("delivery") == "instant" else "batch"
 
 

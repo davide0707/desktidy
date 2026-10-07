@@ -31,17 +31,17 @@ def _save(u: dict) -> None:
 
 
 def cost(model: str, input_tokens: int, output_tokens: int, cache_write: int = 0, cache_read: int = 0,
-         batch: bool = False) -> float:
-    price_in, price_out = config.PRICES.get(model, (4.0, 20.0))
+         batch: bool = False, price: tuple[float, float] | None = None) -> float:
+    price_in, price_out = price or config.PRICES.get(model, (0.0, 0.0))
     usd = (input_tokens * price_in + cache_write * price_in * 1.25 + cache_read * price_in * 0.1
            + output_tokens * price_out) / 1_000_000
     return usd * (0.5 if batch else 1.0)
 
 
 def record(model: str, files: int, input_tokens: int, output_tokens: int, cache_write: int = 0,
-           cache_read: int = 0, batch: bool = False) -> float:
+           cache_read: int = 0, batch: bool = False, price: tuple[float, float] | None = None) -> float:
     """Add one API answer (covering `files` files) to the books; returns its cost in USD."""
-    usd = cost(model, input_tokens, output_tokens, cache_write, cache_read, batch)
+    usd = cost(model, input_tokens, output_tokens, cache_write, cache_read, batch, price)
     u = read()
     day = u["days"].setdefault(date.today().isoformat(), {"files": 0, "usd": 0.0, "requests": 0})
     day["files"] += files

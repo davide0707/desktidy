@@ -24,7 +24,8 @@ and asks you to accept them. You can read them any time with `desktidy guide`.
 
 5. **Private stays private.**
    Files matched by a `private` rule (IDs, payslips, bills, CVs...), photos and screenshots are never sent to the AI.
-   The AI is optional, used only when the offline engine is unsure, with a daily limit and a total budget.
+   The AI is optional (free services included: `desktidy ai provider`), used only when the offline
+   engine is unsure, with a daily limit and a total budget.
 
 6. **You're in charge.**
    `desktidy pause 1h` · `desktidy stop` · `desktidy preview` shows what would happen without moving anything ·

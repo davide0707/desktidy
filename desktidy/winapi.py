@@ -141,18 +141,20 @@ def set_user_env(name: str, value: str | None, kind: int = winreg.REG_SZ) -> Non
     _broadcast_environment_change()
 
 
-def api_key() -> str | None:
-    """ANTHROPIC_API_KEY read from the user environment in the registry, so a new key works without restarting
-    the service; falls back to the process environment."""
+def api_key(env: str | None = "ANTHROPIC_API_KEY") -> str | None:
+    """An API key read from the user environment in the registry (so a new key works without restarting the
+    service), falling back to the process environment."""
+    if not env:
+        return None
     try:
-        value, _ = get_user_env("ANTHROPIC_API_KEY")
+        value, _ = get_user_env(env)
     except OSError:
         value = ""
-    return (value or os.environ.get("ANTHROPIC_API_KEY") or "").strip() or None
+    return (value or os.environ.get(env) or "").strip() or None
 
 
-def set_api_key(key: str | None) -> None:
-    set_user_env("ANTHROPIC_API_KEY", key)
+def set_api_key(key: str | None, env: str = "ANTHROPIC_API_KEY") -> None:
+    set_user_env(env, key)
 
 
 def mask(key: str | None) -> str:

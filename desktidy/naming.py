@@ -67,9 +67,12 @@ def _title_score(line: str, position: int) -> float | None:
                   if len(w) >= 3 and not w.isdigit() and ct.stem(ct.normalize(w).strip()) not in ct.STOP_STEMS]
     if letters < 0.55 or len(meaningful) < 2:
         return None
-    score = 3.0 - 0.15 * position + 0.2 * len(meaningful)
+    # headings are short, early and not sentences
+    score = 3.0 - 0.3 * position + 0.25 * min(len(meaningful), 3) - 0.3 * max(0, len(words) - 6)
     if line.endswith((".", "?", "!")) and len(words) > 6:
-        score -= 2  # looks like a sentence, not a heading
+        score -= 2
+    if re.search(r"[.;!?]\s+\S", line):
+        score -= 1.5  # two sentences on one line
     if line.istitle() or line.isupper():
         score += 0.5
     return score

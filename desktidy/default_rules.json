@@ -18,9 +18,9 @@
   "rename": { "mode": "smart" },
   "pinned_folders": { "min_required": 2, "ask": true, "ask_for_new_folders_in": ["{HOME}\\Desktop"], "wait_seconds": 60 },
   "ai": {
-    "_note": "mode: off | limited (files the offline engine can't place, 10/day) | moderate (also low-confidence ones, 30/day) | ai-only (every non-private file, 100/day). delivery: batch (half price, minutes) | instant. Set the key with: desktidy key",
+    "_note": "provider: groq (free) | gemini (free tier) | mistral (free plan) | openrouter (free models) | ollama (free, on this PC) | claude | openai | custom. Change it with: desktidy ai provider, then: desktidy key. mode: off | limited (files the offline engine can't place, 10/day) | moderate (also low-confidence ones, 30/day) | ai-only (every non-private file, 100/day). model: empty = the provider's default. delivery: batch (Claude only, half price, minutes) | instant.",
+    "provider": "groq",
     "mode": "limited",
-    "model": "claude-haiku-4-5",
     "delivery": "batch",
     "budget_usd": 5.0,
     "credit_reserve_usd": 0.10,

@@ -7,14 +7,14 @@
 <p align="center">
   <b>Your files, sorted while you work.</b><br>
   DeskTidy watches Downloads, Desktop and Documents, understands what every new file is about,
-  gives it a proper name and files it in the right folder. Offline first, with Claude AI only for the hard cases.
+  gives it a proper name and files it in the right folder. Offline first, with an AI of your choice (free ones included) only for the hard cases.
 </p>
 
 <p align="center">
   <a href="https://github.com/davide0707/desktidy/actions/workflows/ci.yml"><img src="https://github.com/davide0707/desktidy/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <img src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6?logo=windows" alt="Windows 10 | 11">
   <img src="https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white" alt="Python 3.10+">
-  <img src="https://img.shields.io/badge/AI%20cost-~%240.0003%20%2F%20file-8A2BE2" alt="AI cost about $0.0003 per file">
+  <img src="https://img.shields.io/badge/AI-free%20or%20~%240.0003%20%2F%20file-8A2BE2" alt="AI: free or about $0.0003 per file">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license"></a>
 </p>
 
@@ -22,7 +22,8 @@
 
 `scan0001.pdf` lands in Downloads. Two minutes later it is `Documents\Personal\Bills\Invoice_2231_Northwind_Energy.pdf`,
 you get a notification, and `desktidy where invoice` tells you where it went and why. No cloud drive, no subscription:
-it reads the file **on your PC**, and only when it really can't decide it asks Claude, for a fraction of a cent.
+it reads the file **on your PC**, and only when it really can't decide it asks an AI: a free one (Groq, Gemini,
+Mistral, OpenRouter, or Ollama on your own PC) or Claude / OpenAI for a fraction of a cent.
 
 ## Read me first: the house rules
 
@@ -53,9 +54,12 @@ before anything is moved ([HOUSE_RULES.md](HOUSE_RULES.md)).
   brings it back.
 - **Pinned folders.** Create `Recipes` on your Desktop and DeskTidy asks *"Pin it?"*. From then on recipes go there:
   by name, by content, or because they look like the files you already put inside.
-- **AI only when needed, and cheap.** Four levels: `off`, `limited`, `moderate`, `ai-only`. Requests are designed for
-  cost: a short list of likely folders instead of the whole tree, several files per request, short excerpts, and the
-  Batch API at half price. **Measured: ~5.7× cheaper than sending the folder tree with every file** (see below).
+- **Any AI, free ones included.** Pick the service: **Groq, Google Gemini, Mistral, OpenRouter** (free plans),
+  **Ollama** (free, runs on your PC, nothing leaves it), **Claude** or **OpenAI** (paid), or any OpenAI-compatible
+  server. Four levels: `off`, `limited`, `moderate`, `ai-only`.
+- **Cheap by design.** A short list of likely folders instead of the whole tree, several files per request, short
+  excerpts, and Claude's Batch API at half price. **Measured: ~5.7× cheaper than sending the folder tree with every
+  file** (see below).
 - **Always in control.** Pause, see where anything went, undo any move, preview what would happen. Everything from a
   Kali-style console or one-line commands.
 
@@ -73,9 +77,10 @@ before anything is moved ([HOUSE_RULES.md](HOUSE_RULES.md)).
 3. The setup starts by itself: read the house rules and pin at least 2 folders.
 4. Open a **new** Command Prompt and type `desktidy`.
 5. Adapt the destinations to your folders: `desktidy rules` (then `desktidy rules check`).
-6. Optional, for the hard cases: `desktidy key` and paste a [Claude API key](https://platform.claude.com/settings/keys).
+6. Optional, for the hard cases: `desktidy ai provider` to pick an AI service (free ones included), then `desktidy key`.
 
-> Without an API key DeskTidy works fully offline. With one, a typical month of downloads costs cents.
+> Without an AI DeskTidy works fully offline. With a free plan it costs nothing; with Claude a month of downloads
+> costs cents.
 
 <details>
 <summary>Prefer pipx?</summary>
@@ -94,7 +99,7 @@ flowchart LR
     B -- yes --> C[Read it on the PC<br/>text, OCR, EXIF, project type]
     C --> D{Offline decision<br/>pinned · name · content<br/>similarity · file type}
     D -- confident --> F[Rename if needed<br/>and move]
-    D -- unsure, and AI mode allows --> E[Claude: short folder list,<br/>batched, half price]
+    D -- unsure, and AI mode allows --> E[AI of your choice, free or paid:<br/>short folder list, files batched]
     E --> F
     F --> G[Notification + moves.csv<br/>desktidy where / undo]
 ```
@@ -121,19 +126,38 @@ Run `desktidy explain <file>` to see exactly what DeskTidy understood and why it
 
 `desktidy rename smart | generic | off` chooses how bold it is.
 
-## AI: cost and privacy
+## AI: free or paid, your choice
 
-DeskTidy uses Claude only for the files the offline engine can't place (or places with low confidence, in `moderate`
-mode). Everything is designed to spend as little as possible:
+DeskTidy asks an AI only about the files the offline engine can't place (or places with low confidence, in `moderate`
+mode). Choose the service with `desktidy ai provider <name>`, then `desktidy key`:
+
+| Service | Cost | Privacy | Reads images | Default model |
+|---|---|---|---|---|
+| `groq` *(default)* | **free** plan, about 1,000 requests a day, no card | prompts not used for training | no (text and OCR only) | `openai/gpt-oss-20b` |
+| `gemini` | **free** tier on the Flash and Flash-Lite models | free tier: Google may use prompts to improve its products | yes | `gemini-3.5-flash-lite` |
+| `mistral` | **free** Experiment plan (phone verification) | free plan: prompts may be used for training | yes | `mistral-small-latest` |
+| `openrouter` | **free** `:free` models, 50 requests a day | free models: the host may log prompts | depends on the model | `google/gemma-4-31b-it:free` |
+| `ollama` | **free**, runs on your PC ([ollama.com](https://ollama.com/download)) | nothing leaves your PC | yes | `gemma3:4b` |
+| `claude` | paid, ~$0.0003 per file with the Batch API | not used for training | yes | `claude-haiku-4-5` |
+| `openai` | paid | not used for training by default | yes | `gpt-5-nano` |
+| `custom` | any OpenAI-compatible server (LM Studio, vLLM...) | your server | set `ai.vision` | set `ai.model` |
+
+Free plans and model names change often (checked in October 2026): `desktidy ai model <id>` switches model, and
+`desktidy key test` checks key and service for free. If a service refuses a feature (for example strict JSON),
+DeskTidy steps down to a simpler request by itself and remembers it.
+
+### Spending as little as possible
+
+Every request is designed to be small, whatever the service:
 
 | What | Effect |
 |---|---|
 | Short list of likely folders per file (offline candidates, similar folders, pinned, top areas) | the folder tree was ~80% of the tokens |
 | Up to 8 files share one request | instructions and folders paid once |
 | ~1,200-character excerpt + key terms, from the text already read on the PC (OCR included) | the file itself is never uploaded |
-| Images only when there is no text, downscaled to 512 px | ~260 tokens per image |
+| Images only when there is no text, downscaled to 512 px (never to text-only services) | ~260 tokens per image |
 | Compact JSON answer with one-letter keys; a name is requested only when needed | few output tokens |
-| **Batch API** by default | **half price** (answers usually within minutes) |
+| **Batch API** by default with Claude | **half price** (answers usually within minutes) |
 
 Measured with Anthropic's token counter on the same three files, against the previous design (whole folder tree in
 every request): **1,292 → 371 input tokens per file**, plus the 50% batch discount: **~$0.0015 → ~$0.00026 per file
@@ -143,11 +167,12 @@ Built-in brakes: a daily file limit, a total budget, an estimated credit (`deskt
 automatic pause when Anthropic reports the credit is exhausted. `desktidy spend` shows today, the last 7 days, the
 month and the total.
 
-> Anthropic does not let API keys read the prepaid balance, so DeskTidy computes the spend from the token counts
+> AI services do not let API keys read the prepaid balance, so DeskTidy computes the spend from the token counts
 > returned with every answer, and estimates the remaining credit from the balance you type in.
 
 **Never sent**: files matched by a `private` rule, photos, screenshots, programs. **Sent for the others**: the excerpt
-above, the file name and the short folder list. The API key is stored in your Windows user environment, never in a file.
+above, the file name and the short folder list. API keys are stored in your Windows user environment
+(`GROQ_API_KEY`, `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`...), never in a file.
 
 ## Commands
 
@@ -167,8 +192,9 @@ Type `desktidy` for the console (use the number or the name), or `desktidy <comm
 | `preview [--now] [--ai]` | what it would do right now, moving nothing |
 | `rename smart · generic · off` | how bold renaming is |
 | `spend` · `spend credit <usd>` · `spend budget <usd>` · `spend web` | AI spend, balance, budget |
-| `ai off · limited · moderate · ai-only` · `ai max <n>` · `ai model haiku` · `ai delivery batch · instant` | how much AI |
-| `key` · `key test` · `key remove` | Claude API key (hidden while you paste it, checked for free) |
+| `ai provider [name]` (or `provider`) | choose the AI service: groq, gemini, mistral, openrouter, ollama, claude, openai, custom |
+| `ai off · limited · moderate · ai-only` · `ai max <n>` · `ai model <id>` · `ai delivery batch · instant` | how much AI, which model |
+| `key` · `key test` · `key remove` | API key of the chosen service (hidden while you paste it, checked for free) |
 | `log [errors · 100 · open]` · `rules [check]` · `open` | log, settings, data folder |
 | `install` · `uninstall` · `about` | command and autostart, version |
 
@@ -184,7 +210,7 @@ on the first run) and reload by themselves.
   "default_destination": "{DOCS}\\00_Inbox\\To_Sort",
   "rename": { "mode": "smart" },
   "pinned_folders": { "min_required": 2, "ask": true, "ask_for_new_folders_in": ["{HOME}\\Desktop"] },
-  "ai": { "mode": "limited", "model": "claude-haiku-4-5", "delivery": "batch", "budget_usd": 5.0,
+  "ai": { "provider": "groq", "mode": "limited", "model": "", "budget_usd": 5.0,
           "user_context": "engineering student; electronics and web projects" },
   "rules": [
     {
@@ -218,7 +244,11 @@ while, skips open files, Office lock files, hidden and system files, and anythin
 **What if it gets one wrong?** `desktidy undo <name>` restores it, with its original name, and DeskTidy leaves it alone
 from then on.
 
-**Does it need the internet?** No. The AI is optional and only used for the files the offline engine can't place.
+**Does it need the internet?** No. The AI is optional and only used for the files the offline engine can't place;
+with Ollama even the AI runs on your PC.
+
+**Is there a free AI option?** Yes: Groq, Gemini, Mistral and OpenRouter have free plans, and Ollama is free and local.
+`desktidy ai provider` lists them with their limits and privacy terms.
 
 **macOS or Linux?** Not yet: it relies on Windows OCR, Task Scheduler and notifications. Contributions are welcome.
 
@@ -239,7 +269,8 @@ desktidy/
   cli.py          console, commands, setup      service.py      background loop, moves, AI batches
   classifier.py   offline decision engine       content.py      text, OCR, EXIF, code and project detection
   naming.py       smart renaming                folders.py      folder catalog, similarity, pinned folders
-  ai.py           compact Claude requests       usage.py        spend, budget, credit
+  ai.py           compact AI requests           providers.py    Claude, OpenAI, Gemini, Groq, Mistral, Ollama...
+  usage.py        spend, budget, credit
   config.py       settings and data files       winapi.py       Task Scheduler, notifications, Recycle Bin
 ```
 

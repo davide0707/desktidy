@@ -25,7 +25,7 @@ PROGRAMS = {".exe", ".msi", ".msix", ".msixbundle", ".appx", ".appxbundle"}
 ARCHIVES = {".zip", ".7z", ".rar"}
 TAG_POINTS = 6.0   # a recognised kind (photo, screenshot, project...) outweighs topics
 THRESHOLD = 3.0    # minimum content score for a decision
-AI_AVAILABLE = importlib.util.find_spec("anthropic") is not None
+AI_AVAILABLE = importlib.util.find_spec("anthropic") is not None   # needed only by the Claude provider
 
 
 @dataclass
@@ -164,7 +164,8 @@ def decide(path: str, is_dir: bool, cfg: config.Config, an: ct.Analysis | None =
 def wants_ai(d: Decision, an: ct.Analysis, cfg: config.Config, no_ai: bool = False) -> bool:
     """Whether the chosen AI mode asks Claude about this file (private files and programs never)."""
     mode = config.ai_mode(cfg)
-    if not AI_AVAILABLE or no_ai or mode == "off" or an.ext in PROGRAMS or d.private or an.is_private:
+    claude = cfg.get("ai", {}).get("provider", "claude") == "claude"
+    if (claude and not AI_AVAILABLE) or no_ai or mode == "off" or an.ext in PROGRAMS or d.private or an.is_private:
         return False
     if mode == "ai-only":
         return True

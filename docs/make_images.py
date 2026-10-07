@@ -80,7 +80,7 @@ def social_png() -> None:
     draw.text((70, 290), "Your files, sorted while you work.", font=bold, fill="#f8fafc")
     for i, text in enumerate(["Understands each file's content - offline, OCR included",
                               "Renames 'scan0001.pdf' after what's inside",
-                              "Claude AI only when needed: ~$0.0003 per file"]):
+                              "Free AI (Groq, Gemini, Ollama) or Claude, only when needed"]):
         draw.text((74, 400 + i * 46), "●  " + text, font=regular, fill="#cbd5e1")
     draw.text((74, 560), "github.com/davide0707/desktidy  ·  Windows 10/11  ·  MIT", font=regular, fill="#64748b")
     im.save(os.path.join(HERE, "social-preview.png"), optimize=True)

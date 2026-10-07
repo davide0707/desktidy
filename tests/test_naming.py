@@ -38,6 +38,11 @@ class TestTitle(IsolatedTest):
         p = self.write("scan0001.txt", "\nPage 1\nInvoice 2231 from Northwind Energy\nCustomer 55120\n")
         self.assertEqual(naming.title(self.analysis(p)), "Invoice 2231 from Northwind Energy")
 
+    def test_short_heading_beats_a_long_line(self):
+        p = self.write("Documento3.txt", "Relazione di laboratorio\nMisura della resistenza su un circuito RC.\n"
+                                         "Tensione e corrente misurate, incertezza di misura calcolata. Relazione finale\n")
+        self.assertEqual(naming.title(self.analysis(p)), "Relazione di laboratorio")
+
     def test_sentences_are_not_titles(self):
         p = self.write("x.txt", "Today in class we looked at the derivative of a composite function and much more.\n")
         self.assertIsNone(naming.title(self.analysis(p)))
