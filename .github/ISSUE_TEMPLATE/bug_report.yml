@@ -1,0 +1,31 @@
+name: Bug report
+description: Something went wrong or a file ended up in the wrong place
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for the report! Please remove personal paths and names before posting.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you expect, and what did DeskTidy do instead?
+    validations:
+      required: true
+  - type: textarea
+    id: explain
+    attributes:
+      label: Output of `desktidy explain <file>` (if a file was misplaced)
+      render: text
+  - type: textarea
+    id: log
+    attributes:
+      label: Output of `desktidy log errors`
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: DeskTidy and Windows version
+      placeholder: "DeskTidy 1.0.0, Windows 11 24H2"
+    validations:
+      required: true

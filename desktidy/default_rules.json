@@ -1,0 +1,301 @@
+{
+  "_house_rules": "Names starting with ! are never touched. Nothing is moved until the house rules are accepted and at least pinned_folders.min_required folders are pinned (desktidy setup). Every move is logged (desktidy where) and can be undone (desktidy undo).",
+  "_how_it_works": "Decision order (all offline, free, nothing sent): 0) PINNED folders; 1) NAME words (exact, then plural/singular, then one typo); 2) CONTENT: content_words (strong), topics (at least min_topics, usually 2-3), recognize (kinds DeskTidy understands: photo, screenshot, icon, scan, code_python, code_c, code_web, code_shell, code_sql, project_code, project_python, project_web, project_stm32, project_kicad, gerber, print_3d, font, installer, photo_folder, audio_folder, video_folder); 3) SIMILARITY with the files already in each folder; 4) FILE TYPE (extensions). Claude is asked only as ai.mode allows. Private rules never leave the PC. Programs only go to {INSTALLERS}. This file reloads by itself.",
+  "variables": {
+    "HOME": "%USERPROFILE%",
+    "DOCS": "%USERPROFILE%\\Documents",
+    "STUDY": "%USERPROFILE%\\Documents\\01_Study",
+    "INSTALLERS": "%USERPROFILE%\\Documents\\05_Software\\Installers"
+  },
+  "interval_seconds": 30,
+  "watched_folders": [
+    { "path": "{HOME}\\Downloads", "wait_seconds": 120, "include_folders": true },
+    { "path": "{HOME}\\Desktop", "wait_seconds": 600, "include_folders": false },
+    { "path": "{DOCS}", "wait_seconds": 600, "include_folders": false, "ignore": [] }
+  ],
+  "default_destination": "{DOCS}\\00_Inbox\\To_Sort",
+  "analysis": { "ocr": true, "similarity": true },
+  "rename": { "mode": "smart" },
+  "pinned_folders": { "min_required": 2, "ask": true, "ask_for_new_folders_in": ["{HOME}\\Desktop"], "wait_seconds": 60 },
+  "ai": {
+    "_note": "mode: off | limited (files the offline engine can't place, 10/day) | moderate (also low-confidence ones, 30/day) | ai-only (every non-private file, 100/day). delivery: batch (half price, minutes) | instant. Set the key with: desktidy key",
+    "mode": "limited",
+    "model": "claude-haiku-4-5",
+    "delivery": "batch",
+    "budget_usd": 5.0,
+    "credit_reserve_usd": 0.10,
+    "min_confidence": "high",
+    "max_folders_per_file": 30,
+    "user_context": "",
+    "candidate_folders": [
+      { "path": "{DOCS}\\00_Inbox", "depth": 1 },
+      { "path": "{STUDY}", "depth": 3 },
+      { "path": "{DOCS}\\02_Work", "depth": 2 },
+      { "path": "{DOCS}\\03_Projects", "depth": 2 },
+      { "path": "{DOCS}\\04_Personal", "depth": 2 },
+      { "path": "{DOCS}\\05_Software", "depth": 2 },
+      { "path": "{HOME}\\Videos", "depth": 1 }
+    ]
+  },
+  "rules": [
+    {
+      "name": "Installers: electronics",
+      "type": "both",
+      "extensions": [".exe", ".msi", ".msix", ".zip", ".7z", ".rar", ".uf2"],
+      "name_words": ["stm32", "stlink", "st link", "stm32cube", "cubeide", "cubemx", "arduino", "cp210x", "ch340", "ftdi",
+                     "multisim", "labview", "ltspice", "kicad", "packet tracer", "rpi pico", "esp32", "esp idf",
+                     "platformio", "proteus", "fritzing", "altium", "eagle", "logisim", "quartus", "vivado", "keil",
+                     "segger", "jlink", "teraterm", "coolterm"],
+      "destination": "{INSTALLERS}\\Electronics"
+    },
+    {
+      "name": "Installers: network and security",
+      "type": "both",
+      "extensions": [".exe", ".msi", ".msix", ".zip", ".7z", ".rar"],
+      "name_words": ["vpn", "nordvpn", "protonvpn", "openvpn", "wireguard", "tailscale", "zerotier", "wireshark", "npcap",
+                     "nmap", "zenmap", "mosquitto", "mqttx", "tor browser", "burp", "metasploit", "angry ip",
+                     "advanced ip scanner", "filezilla", "winscp", "hashcat", "ghidra"],
+      "destination": "{INSTALLERS}\\Network_and_Security"
+    },
+    {
+      "name": "Installers: development",
+      "type": "both",
+      "extensions": [".exe", ".msi", ".msix", ".zip", ".7z", ".rar"],
+      "name_words": ["git", "github cli", "node", "nodejs", "python", "cmake", "vscode", "vs code", "vscodeusersetup",
+                     "visual studio", "jetbrains", "pycharm", "intellij", "clion", "sqlite", "db browser", "postman",
+                     "dotnet", "jdk", "java", "msys2", "mingw", "llvm", "android studio", "putty", "anaconda",
+                     "miniconda", "rustup", "golang", "ollama", "cursor", "notepad"],
+      "destination": "{INSTALLERS}\\Development"
+    },
+    {
+      "name": "Operating systems and virtual machines",
+      "type": "both",
+      "extensions": [".7z", ".zip", ".rar", ".xz", ".gz", ".torrent"],
+      "name_words": ["kali", "ubuntu", "debian", "fedora", "linux mint", "archlinux", "arch linux", "hyper v", "vmware",
+                     "virtualbox", "win11", "windows 11 iso"],
+      "destination": "{INSTALLERS}\\Virtual_Machines"
+    },
+    {
+      "name": "Portable apps",
+      "extensions": [".zip", ".7z", ".rar"],
+      "name_words": ["portable", "portabile"],
+      "destination": "{DOCS}\\05_Software\\Portable"
+    },
+    {
+      "name": "Study: maths",
+      "type": "both",
+      "name_words": ["calculus", "analisi 1", "analisi matematica", "linear algebra", "algebra lineare", "geometria"],
+      "content_words": ["calculus", "analisi matematica", "linear algebra", "algebra lineare"],
+      "topics": ["derivative", "derivata", "integral", "integrale", "limit", "limite", "theorem", "teorema", "proof",
+                 "dimostrazione", "series", "serie", "matrix", "matrice", "eigenvalue", "autovalore", "differential equation",
+                 "equazione differenziale", "taylor", "asymptote", "asintoto", "continuity", "continuita"],
+      "extensions": [".pdf", ".docx", ".pptx", ".odt", ".txt", ".md", ".png", ".jpg", ".jpeg", ".zip"],
+      "destination": "{STUDY}\\Courses\\Maths"
+    },
+    {
+      "name": "Study: programming",
+      "type": "both",
+      "name_words": ["programming", "programmazione", "fondamenti di informatica", "computer science", "algorithms",
+                     "algoritmi", "data structures"],
+      "topics": ["algorithm", "algoritmo", "pointer", "puntatore", "variable", "variabile", "loop", "ciclo", "array",
+                 "recursion", "ricorsione", "data structure", "struttura dati", "linked list", "compiler", "compilatore",
+                 "complexity", "complessita", "sorting", "ordinamento", "pseudocode", "pseudocodice"],
+      "destination": "{STUDY}\\Courses\\Programming"
+    },
+    {
+      "name": "Study: exams",
+      "generic": true,
+      "name_words": ["exam", "exams", "esame", "esami", "appello", "midterm", "final exam", "quiz", "prova scritta",
+                     "prova orale"],
+      "topics": ["exam", "appello", "time allowed", "tempo a disposizione", "student id", "matricola", "surname",
+                 "cognome", "points", "punti", "not allowed", "non e consentito"],
+      "min_topics": 3,
+      "destination": "{STUDY}\\Exams"
+    },
+    {
+      "name": "Study: notes and slides",
+      "generic": true,
+      "name_words": ["notes", "appunti", "lecture", "lezione", "lezioni", "slides", "slide", "handout", "dispensa",
+                     "dispense", "exercises", "esercizi", "esercitazione", "cheat sheet", "formulario"],
+      "topics": ["lecture", "lezione", "definition", "definizione", "theorem", "teorema", "example", "esempio",
+                 "exercise", "esercizio", "lemma", "corollary", "corollario", "proposition", "proposizione"],
+      "min_topics": 3,
+      "destination": "{STUDY}\\Notes"
+    },
+    {
+      "name": "Study: university admin",
+      "name_words": ["enrollment", "enrolment", "immatricolazione", "iscrizione", "tuition", "tasse universitarie",
+                     "student card", "libretto", "study plan", "piano di studi", "scholarship", "borsa di studio",
+                     "transcript", "isee"],
+      "topics": ["enrollment", "immatricolazione", "tuition", "tasse", "student id", "matricola", "scholarship",
+                 "borsa di studio", "installment", "rata", "academic year", "anno accademico"],
+      "min_topics": 2,
+      "destination": "{STUDY}\\Admin"
+    },
+    {
+      "name": "CV",
+      "name_words": ["cv", "curriculum", "resume", "europass", "cover letter", "lettera di presentazione",
+                     "lettera motivazionale"],
+      "content_words": ["curriculum vitae", "europass"],
+      "topics": ["work experience", "esperienza lavorativa", "education", "istruzione e formazione", "skills",
+                 "competenze", "mother tongue", "lingua madre", "date of birth", "data di nascita"],
+      "min_topics": 3,
+      "destination": "{DOCS}\\04_Personal\\CV",
+      "private": true
+    },
+    {
+      "name": "Identity documents",
+      "name_words": ["passport", "passaporto", "identity card", "id card", "carta d identita", "carta di identita",
+                     "driving licence", "drivers license", "patente", "codice fiscale", "tessera sanitaria",
+                     "residence permit", "permesso di soggiorno"],
+      "topics": ["passport", "passaporto", "identity card", "carta di identita", "place of birth", "luogo di nascita",
+                 "nationality", "cittadinanza", "date of expiry", "data di scadenza", "issued", "rilasciata"],
+      "min_topics": 3,
+      "destination": "{DOCS}\\04_Personal\\IDs",
+      "private": true
+    },
+    {
+      "name": "Payslips",
+      "name_words": ["payslip", "pay slip", "busta paga", "buste paga", "cedolino", "salary statement",
+                     "certificazione unica"],
+      "content_words": ["payslip", "cedolino", "busta paga"],
+      "topics": ["gross pay", "net pay", "retribuzione", "netto in busta", "tax", "irpef", "inps", "deductions",
+                 "trattenute", "national insurance", "hours worked", "ore lavorate"],
+      "min_topics": 3,
+      "destination": "{DOCS}\\02_Work\\Payslips",
+      "private": true
+    },
+    {
+      "name": "Work",
+      "name_words": ["contract", "contratto", "job offer", "offerta di lavoro", "interview", "colloquio", "internship",
+                     "tirocinio", "resignation", "dimissioni"],
+      "topics": ["employer", "datore di lavoro", "employee", "lavoratore", "job title", "mansione", "working hours",
+                 "orario di lavoro", "probation", "periodo di prova", "salary", "retribuzione"],
+      "min_topics": 3,
+      "destination": "{DOCS}\\02_Work",
+      "private": true
+    },
+    {
+      "name": "Bills, invoices and receipts",
+      "name_words": ["invoice", "fattura", "receipt", "ricevuta", "bill", "bolletta", "bank statement",
+                     "estratto conto", "insurance", "assicurazione", "warranty", "garanzia", "f24"],
+      "content_words": ["invoice", "fattura", "receipt", "ricevuta di pagamento"],
+      "topics": ["invoice", "fattura", "subtotal", "imponibile", "vat", "iva", "amount due", "totale da pagare",
+                 "payment", "pagamento", "due date", "scadenza", "customer number", "codice cliente", "kwh"],
+      "min_topics": 3,
+      "destination": "{DOCS}\\04_Personal\\Bills_and_Receipts",
+      "private": true
+    },
+    {
+      "name": "Projects: security",
+      "type": "both",
+      "name_words": ["ctf", "pentest", "pentesting", "exploit", "hacking", "writeup"],
+      "topics": ["exploit", "vulnerability", "vulnerabilita", "reverse shell", "privilege escalation", "nmap",
+                 "metasploit", "ctf", "sql injection", "xss", "password cracking", "wireshark", "kali"],
+      "min_topics": 3,
+      "destination": "{DOCS}\\03_Projects\\Security"
+    },
+    {
+      "name": "Projects: web",
+      "type": "both",
+      "name_words": ["nextjs", "next js", "react", "website", "sito web", "landing page", "frontend", "netlify", "vercel"],
+      "topics": ["html", "css", "javascript", "typescript", "react", "next js", "frontend", "backend", "deploy",
+                 "vercel", "netlify", "tailwind", "component", "componente"],
+      "min_topics": 3,
+      "recognize": ["project_web"],
+      "destination": "{DOCS}\\03_Projects\\Web"
+    },
+    {
+      "name": "Projects: 3D printing",
+      "type": "both",
+      "name_words": ["3d print", "stampa 3d", "cura", "ender", "prusa", "bambu", "thingiverse", "printables"],
+      "topics": ["3d printing", "stampa 3d", "filament", "filamento", "pla", "petg", "nozzle", "ugello", "slicer",
+                 "infill", "supports", "supporti", "layer height"],
+      "min_topics": 3,
+      "recognize": ["print_3d"],
+      "destination": "{DOCS}\\03_Projects\\3D_Printing"
+    },
+    {
+      "name": "Projects: electronics and PCB",
+      "type": "both",
+      "name_words": ["gerber", "pcb", "kicad", "easyeda", "schematic", "schema elettrico", "pick and place"],
+      "topics": ["pcb", "schematic", "schema elettrico", "resistor", "resistore", "capacitor", "condensatore",
+                 "transistor", "diode", "diodo", "footprint", "soldering", "saldatura", "smd", "datasheet",
+                 "op amp", "microcontroller", "microcontrollore", "mosfet", "firmware", "uart", "i2c"],
+      "min_topics": 3,
+      "recognize": ["project_kicad", "gerber", "project_stm32"],
+      "destination": "{DOCS}\\03_Projects\\Electronics"
+    },
+    {
+      "name": "AI images",
+      "extensions": [".png", ".jpg", ".jpeg", ".webp"],
+      "name_words": ["dall e", "dalle", "chatgpt image", "gemini generated", "firefly", "midjourney", "imagefx",
+                     "leonardo", "stable diffusion", "ai generated"],
+      "destination": "{DOCS}\\04_Personal\\Images\\AI"
+    },
+    {
+      "name": "Wallpapers and stock images",
+      "extensions": [".png", ".jpg", ".jpeg", ".webp"],
+      "name_words": ["wallpaper", "sfondo", "sfondi", "background", "4k", "8k", "unsplash", "pexels", "pixabay",
+                     "freepik", "shutterstock", "istock"],
+      "destination": "{DOCS}\\04_Personal\\Images\\Wallpapers"
+    },
+    {
+      "name": "Icons and logos",
+      "extensions": [".png", ".jpg", ".jpeg", ".webp", ".svg", ".ico"],
+      "name_words": ["logo", "icon", "icona", "icone", "favicon"],
+      "recognize": ["icon"],
+      "destination": "{DOCS}\\04_Personal\\Images\\Icons_and_Logos"
+    },
+    {
+      "name": "Memes",
+      "name_words": ["meme", "memes"],
+      "destination": "{DOCS}\\04_Personal\\Images\\Memes"
+    },
+    {
+      "name": "Screenshots",
+      "extensions": [".png", ".jpg", ".jpeg", ".webp"],
+      "name_words": ["screenshot", "schermata", "screen shot", "cattura", "snip"],
+      "recognize": ["screenshot"],
+      "destination": "{HOME}\\Pictures\\Screenshots",
+      "private": true
+    },
+    {
+      "name": "Photos",
+      "extensions": [".jpg", ".jpeg", ".png", ".heic", ".heif", ".webp", ".dng"],
+      "name_words": ["whatsapp", "img", "dsc", "pxl", "photo", "foto"],
+      "recognize": ["photo", "photo_folder"],
+      "destination": "{DOCS}\\04_Personal\\Photos",
+      "private": true
+    },
+    {
+      "name": "Screen recordings",
+      "extensions": [".mp4", ".mkv", ".mov", ".webm"],
+      "name_words": ["screen recording", "registrazione dello schermo", "obs"],
+      "destination": "{HOME}\\Videos\\Screen_Recordings"
+    },
+    { "name": "Installers", "extensions": [".exe", ".msi", ".msix", ".msixbundle", ".appx", ".appxbundle"], "recognize": ["installer"], "destination": "{INSTALLERS}\\Apps" },
+    { "name": "VS Code extensions", "extensions": [".vsix"], "destination": "{INSTALLERS}\\Development" },
+    { "name": "Firmware", "extensions": [".uf2", ".hex"], "destination": "{INSTALLERS}\\Electronics" },
+    { "name": "Disk images", "extensions": [".iso", ".img", ".vhd", ".vhdx", ".ova", ".ovf", ".vmdk", ".qcow2"], "destination": "{INSTALLERS}\\Virtual_Machines" },
+    { "name": "Fonts", "extensions": [".ttf", ".otf", ".woff", ".woff2"], "recognize": ["font"], "destination": "{DOCS}\\05_Software\\Fonts" },
+    { "name": "3D models", "extensions": [".stl", ".gcode", ".3mf", ".obj", ".step", ".stp", ".f3d", ".curaprofile", ".ufp"], "destination": "{DOCS}\\03_Projects\\3D_Printing" },
+    { "name": "Electronics files", "extensions": [".ms14", ".brd", ".sch", ".kicad_pcb", ".kicad_sch", ".kicad_pro", ".gbr", ".drl", ".epro", ".asc", ".ioc", ".fzz"], "destination": "{DOCS}\\03_Projects\\Electronics" },
+    { "name": "Python", "extensions": [".py", ".pyw"], "recognize": ["code_python", "project_python"], "destination": "{DOCS}\\03_Projects\\Code\\Python" },
+    { "name": "Notebooks", "extensions": [".ipynb"], "destination": "{DOCS}\\03_Projects\\Code\\Notebooks" },
+    { "name": "Databases and SQL", "extensions": [".sql", ".db", ".sqlite", ".sqlite3"], "recognize": ["code_sql"], "destination": "{DOCS}\\03_Projects\\Code\\SQL" },
+    {
+      "name": "Code snippets",
+      "extensions": [".c", ".cpp", ".h", ".hpp", ".cs", ".java", ".js", ".ts", ".jsx", ".tsx", ".html", ".css", ".json",
+                     ".xml", ".yaml", ".yml", ".sh", ".bat", ".ps1", ".ino", ".go", ".rs", ".php", ".toml", ".md"],
+      "recognize": ["code_c", "code_web", "code_shell"],
+      "destination": "{DOCS}\\03_Projects\\Code\\Snippets"
+    },
+    { "name": "Calendar", "extensions": [".ics", ".vcs"], "destination": "{DOCS}\\04_Personal\\Calendar" },
+    { "name": "VPN profiles", "extensions": [".ovpn"], "destination": "{DOCS}\\04_Personal\\Configs\\VPN", "private": true },
+    { "name": "Contacts", "extensions": [".vcf"], "destination": "{DOCS}\\04_Personal\\Contacts", "private": true },
+    { "name": "Camera formats", "extensions": [".heic", ".heif", ".dng"], "destination": "{DOCS}\\04_Personal\\Photos", "private": true },
+    { "name": "Videos", "extensions": [".mp4", ".mov", ".mkv", ".avi", ".webm", ".wmv", ".m4v", ".3gp"], "recognize": ["video_folder"], "destination": "{DOCS}\\04_Personal\\Videos" },
+    { "name": "Audio", "extensions": [".mp3", ".wav", ".m4a", ".flac", ".ogg", ".opus", ".aac", ".wma"], "recognize": ["audio_folder"], "destination": "{DOCS}\\04_Personal\\Music_and_Audio" }
+  ]
+}

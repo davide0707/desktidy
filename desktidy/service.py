@@ -1,0 +1,506 @@
+"""The background service: every few seconds it looks at the watched folders and files away what is new.
+
+It starts at sign-in through Task Scheduler (no window) and is controlled with the `desktidy` command.
+Run it in the foreground with:  desktidy-service --dry-run --once --now   (shows what it would do).
+"""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import hashlib
+import logging
+import os
+import queue
+import shutil
+import sys
+import threading
+import time
+from dataclasses import dataclass, field
+from datetime import date, datetime
+from logging.handlers import RotatingFileHandler
+
+from . import APP_NAME, __version__, classifier, config, folders, naming, usage, winapi
+from . import content as ct
+
+TEMPORARY = {".crdownload", ".part", ".partial", ".download", ".opdownload", ".tmp", ".!ut", ".aria2",
+             ".desktidy_tmp"}
+IGNORED_NAMES = {"desktop.ini", "thumbs.db"}
+IGNORED_EXT = {".lnk", ".url"}
+HIDDEN_SYSTEM_LINK = 0x2 | 0x4 | 0x400
+JOB_POLL_SECONDS = 45
+JOB_GIVE_UP_HOURS = 26
+
+log = logging.getLogger("desktidy")
+
+
+@dataclass
+class Options:
+    dry_run: bool = False        # show what would happen, change nothing
+    once: bool = False           # one pass, then exit
+    no_ai: bool = False
+    now: bool = False            # ignore the waiting times (dry runs)
+    config_file: str | None = None
+    say: object = field(default=print, repr=False)   # where dry-run results go
+
+
+def setup_logging(opts: Options) -> None:
+    log.setLevel(logging.INFO)
+    log.handlers.clear()
+    fmt = logging.Formatter("%(asctime)s %(message)s", "%Y-%m-%d %H:%M:%S")
+    if not opts.dry_run:
+        handler = RotatingFileHandler(config.path("log"), maxBytes=2_000_000, backupCount=1, encoding="utf-8")
+        handler.setFormatter(fmt)
+        log.addHandler(handler)
+    if sys.stdout and not opts.dry_run:
+        console = logging.StreamHandler(sys.stdout)
+        console.setFormatter(fmt)
+        log.addHandler(console)
+
+
+# ---------------------------------------------------------------- moving files
+def _fingerprint(p: str) -> str:
+    h = hashlib.blake2b(digest_size=20)
+    with open(p, "rb") as f:
+        while chunk := f.read(1 << 20):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def find_duplicate(src: str, folder: str) -> str | None:
+    """An identical file already in the destination folder (same size and same content)."""
+    try:
+        size = os.path.getsize(src)
+        same_size = [e.path for e in os.scandir(folder) if e.is_file() and e.stat().st_size == size]
+    except OSError:
+        return None
+    if not same_size:
+        return None
+    mine = _fingerprint(src)
+    return next((c for c in same_size if _fingerprint(c) == mine), None)
+
+
+def free_name(folder: str, name: str, is_dir: bool) -> str:
+    dst = os.path.join(folder, name)
+    stem, ext = (name, "") if is_dir else os.path.splitext(name)
+    n = 2
+    while os.path.exists(dst):
+        dst = os.path.join(folder, f"{stem}_v{n}{ext}")
+        n += 1
+    return dst
+
+
+def move(src: str, folder: str, name: str, is_dir: bool) -> tuple[str, str]:
+    """("MOVED", final path) or ("DUPLICATE_TRASHED", the identical file already there)."""
+    os.makedirs(folder, exist_ok=True)
+    if not is_dir:
+        twin = find_duplicate(src, folder)
+        if twin:
+            if winapi.recycle(src):
+                return "DUPLICATE_TRASHED", twin
+            raise OSError("duplicate could not be sent to the Recycle Bin")
+    dst = free_name(folder, name, is_dir)
+    drive = lambda p: os.path.splitdrive(os.path.abspath(p))[0].lower()
+    if drive(src) == drive(folder):
+        os.rename(src, dst)
+        return "MOVED", dst
+    tmp = dst + ".desktidy_tmp"
+    if is_dir:
+        shutil.copytree(src, tmp)
+        os.rename(tmp, dst)
+        shutil.rmtree(src)  # the copy is already complete at the destination
+    else:
+        shutil.copy2(src, tmp)
+        if os.path.getsize(tmp) != os.path.getsize(src):
+            os.remove(tmp)
+            raise OSError("incomplete copy")
+        os.replace(tmp, dst)
+        try:
+            os.remove(src)
+        except OSError:
+            os.remove(dst)  # the original is locked: try again at the next pass
+            raise
+    return "MOVED", dst
+
+
+def record(action: str, src: str, dst: str, reason: str) -> None:
+    file = config.path("moves")
+    new = not os.path.exists(file)
+    with open(file, "a", newline="", encoding="utf-8-sig") as f:
+        w = csv.writer(f)
+        if new:
+            w.writerow(["time", "action", "source", "destination", "reason"])
+        w.writerow([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), action, src, dst, reason])
+
+
+def read_moves() -> list[dict]:
+    try:
+        with open(config.path("moves"), encoding="utf-8-sig", newline="") as f:
+            return [r for r in csv.DictReader(f) if r.get("time")]
+    except OSError:
+        return []
+
+
+# ---------------------------------------------------------------- the service
+class Service:
+    def __init__(self, opts: Options):
+        self.opts = opts
+        self.errors: dict[str, str] = {}
+        self.settled: dict[str, tuple] = {}     # items that stay where they are, until they change
+        self.questions: queue.Queue = queue.Queue()
+        self.asked: set[str] = set()
+        self.setup_warned: str | None = None
+        self.state = {"pid": os.getpid(), "version": __version__,
+                      "started": datetime.now().isoformat(timespec="seconds"),
+                      "date": date.today().isoformat(), "moved_today": 0}
+
+    # ------------------------------------------------ which items to look at
+    @staticmethod
+    def ignored(entry: os.DirEntry, watched: dict) -> bool:
+        name = entry.name.lower()
+        if name.startswith("!"):
+            return True  # "!" at the start of the name = never tidy
+        if name in IGNORED_NAMES or name.startswith(("~$", ".~lock")) or entry.name in watched.get("ignore", []):
+            return True
+        if os.path.splitext(name)[1] in IGNORED_EXT | TEMPORARY:
+            return True
+        return bool(entry.stat(follow_symlinks=False).st_file_attributes & HIDDEN_SYSTEM_LINK)
+
+    @staticmethod
+    def last_change(path: str, is_dir: bool) -> float:
+        st = os.stat(path)
+        t = max(st.st_mtime, st.st_ctime)
+        if is_dir:
+            for root, _, files in os.walk(path):
+                for f in files:
+                    if os.path.splitext(f)[1].lower() in TEMPORARY:
+                        return time.time()
+                    try:
+                        s = os.stat(os.path.join(root, f))
+                        t = max(t, s.st_mtime, s.st_ctime)
+                    except OSError:
+                        return time.time()
+        return t
+
+    def ready(self, path: str, is_dir: bool, wait: int) -> bool:
+        if not self.opts.now and time.time() - self.last_change(path, is_dir) < wait:
+            return False
+        if not is_dir:
+            if any(os.path.exists(path + e) for e in (".part", ".crdownload", ".download")):
+                return False
+            if winapi.file_in_use(path):
+                return False
+        return True
+
+    @staticmethod
+    def is_kept(path: str) -> bool:
+        """Restored by `desktidy undo`: left alone until the user changes it."""
+        kept = config.read_json(config.path("kept"), [])
+        if not kept:
+            return False
+        key = os.path.normcase(path)
+        for entry in kept:
+            if os.path.normcase(entry["path"]) == key:
+                try:
+                    st = os.stat(path)
+                except OSError:
+                    return False
+                if (st.st_size, round(st.st_mtime, 3)) == (entry["size"], round(entry["mtime"], 3)):
+                    return True
+                config.write_json(config.path("kept"), [k for k in kept if k is not entry])
+                return False
+        return False
+
+    # ------------------------------------------------ one pass
+    def tick(self, cfg: config.Config) -> list[str]:
+        missing = folders.setup_missing(cfg)
+        self.state["setup_missing"] = missing
+        if missing:  # first-run setup not finished: watch only, move nothing
+            if self.setup_warned != missing:
+                self.setup_warned = missing
+                log.info(f"waiting for the setup ({missing}): run  desktidy setup")
+            return []
+        done = [] if self.opts.dry_run else self.finish_jobs(cfg)
+        pending = self.pending_paths()
+        for_ai = []
+        for watched in cfg["watched_folders"]:
+            base = cfg.expand(watched["path"])
+            try:
+                entries = list(os.scandir(base))
+            except OSError:
+                continue
+            for e in entries:
+                try:
+                    if self.ignored(e, watched):
+                        continue
+                    is_dir = e.is_dir(follow_symlinks=False)
+                    if is_dir and (not watched.get("include_folders", False) or folders.holds_pinned(e.path)):
+                        continue  # pinned folders (or folders holding one) are never moved
+                    key = os.path.normcase(e.path)
+                    st = e.stat()
+                    if key in pending or self.settled.get(key) == (st.st_size, st.st_mtime) or self.is_kept(e.path):
+                        continue
+                    if not self.ready(e.path, is_dir, watched.get("wait_seconds", 120)):
+                        continue
+                    an = ct.analyze(e.path, is_dir, cfg)
+                    d = classifier.decide(e.path, is_dir, cfg, an)
+                    plan = naming.plan(an, cfg)
+                    if classifier.wants_ai(d, an, cfg, self.opts.no_ai):
+                        for_ai.append((e.path, is_dir, base, an, d, plan))
+                        continue
+                    done += self.finish(cfg, e.path, is_dir, base, d.dest, d.reason,
+                                        plan.new_stem or plan.fallback, plan.reason)
+                except Exception as ex:
+                    self.error(e.path, ex)
+        if for_ai:
+            done += self.dispatch(for_ai, cfg)
+        return done
+
+    def finish(self, cfg: config.Config, path: str, is_dir: bool, base: str, dest: str | None, reason: str,
+               new_stem: str | None, rename_reason: str) -> list[str]:
+        """Move (and maybe rename) one item; returns the line for the notification."""
+        if not dest:
+            dest = cfg.default_destination
+            if reason in ("", "no rule matched"):
+                reason = "no rule matched: left to sort by hand"
+        original = os.path.basename(path)
+        name = naming.final_name(original, new_stem, is_dir)
+        renamed = new_stem is not None and os.path.splitext(name)[0] != os.path.splitext(config.clean_name(original))[0]
+        why = reason + (f"; renamed ({rename_reason})" if renamed and rename_reason else "")
+        if os.path.normcase(dest) == os.path.normcase(base):
+            st = os.stat(path)
+            self.settled[os.path.normcase(path)] = (st.st_size, st.st_mtime)
+            return []
+        if self.opts.dry_run:
+            self.opts.say(f"{original}  ->  {config.short(dest)}\\{name}   ({why})")
+            return []
+        action, final = move(path, dest, name, is_dir)
+        record(action, path, final, why)
+        log.info(f"{action}: {path} -> {final} ({why})")
+        self.state["moved_today"] += 1
+        self.errors.pop(path, None)
+        if action == "DUPLICATE_TRASHED":
+            return [f"{original}: duplicate of {os.path.basename(final)}, sent to the Recycle Bin"]
+        return [f"{original} -> {config.short(os.path.dirname(final))}" + (f" as {name}" if renamed else "")]
+
+    # ------------------------------------------------ the AI
+    def dispatch(self, items: list[tuple], cfg: config.Config) -> list[str]:
+        from . import ai  # loaded only when needed: the anthropic library is slow to import
+        key = ai.ready(cfg, log)
+        allowed = usage.files_left_today(cfg) if key else 0
+        done = []
+        for path, is_dir, base, _an, d, plan in items[allowed:]:  # beyond the daily limit: offline decision
+            done += self.finish(cfg, path, is_dir, base, d.dest, d.reason, plan.new_stem or plan.fallback, plan.reason)
+        work = [ai.item_for(path, is_dir, base, an, d, plan, cfg) for path, is_dir, base, an, d, plan in items[:allowed]]
+        instant = config.ai_delivery(cfg) == "instant" or self.opts.dry_run
+        for start in range(0, len(work), ai.MAX_FILES_PER_REQUEST):
+            chunk = work[start:start + ai.MAX_FILES_PER_REQUEST]
+            if instant:
+                answers = ai.ask(chunk, cfg, key, log) or {}
+                for n, item in enumerate(chunk, 1):
+                    done += self.finish_item(item, answers.get(n), cfg)
+                continue
+            job = ai.submit(chunk, cfg, key, log)
+            if job:
+                data = config.read_json(config.path("jobs"), {"jobs": []})
+                data["jobs"].append(job)
+                config.write_json(config.path("jobs"), data)
+            else:
+                for item in chunk:
+                    done += self.finish_item(item, None, cfg)
+        return done
+
+    def finish_item(self, item, answer, cfg: config.Config) -> list[str]:
+        dest, reason = item.dest, item.reason
+        accepted = ("high", "medium") if cfg.ai.get("min_confidence") == "medium" else ("high",)
+        if answer:
+            if answer.confidence in accepted and answer.folder:
+                dest, reason = answer.folder, f"AI ({answer.confidence}): {answer.why}"
+            elif item.dest is None:
+                maybe = f": maybe {folders.label(answer.folder, folders.aliases(cfg))}" if answer.folder else ""
+                reason = f"AI unsure ({answer.confidence}){maybe}"
+        ai_name = answer.name if answer and item.ask_name and answer.name else None
+        new_stem = item.new_stem or ai_name or item.fallback_stem
+        rename_reason = item.rename_reason + ("; name suggested by AI" if ai_name else "")
+        return self.finish(cfg, item.path, item.is_dir, item.base, dest, reason, new_stem, rename_reason)
+
+    @staticmethod
+    def pending_paths() -> set[str]:
+        data = config.read_json(config.path("jobs"), {"jobs": []})
+        return {os.path.normcase(i["path"]) for job in data.get("jobs", []) for i in job["items"]}
+
+    def finish_jobs(self, cfg: config.Config) -> list[str]:
+        data = config.read_json(config.path("jobs"), {"jobs": []})
+        if not data.get("jobs"):
+            return []
+        from . import ai
+        done, waiting = [], []
+        for job in data["jobs"]:
+            age_hours = (datetime.now() - datetime.fromisoformat(job["created"])).total_seconds() / 3600
+            if age_hours < JOB_GIVE_UP_HOURS and time.time() - job.get("polled", 0) < JOB_POLL_SECONDS:
+                waiting.append(job)
+                continue
+            job["polled"] = time.time()
+            finished, answers = ai.collect(job, log) if age_hours < JOB_GIVE_UP_HOURS else (True, None)
+            if not finished:
+                waiting.append(job)
+                continue
+            for n, raw in enumerate(job["items"], 1):
+                item = ai.Item.from_dict(raw)
+                try:
+                    st = os.stat(item.path)
+                except OSError:
+                    continue  # moved or deleted meanwhile
+                if (st.st_size, st.st_mtime) != (item.size, item.mtime):
+                    continue  # edited meanwhile: the next pass decides again
+                try:
+                    done += self.finish_item(item, (answers or {}).get(n), cfg)
+                except Exception as ex:
+                    self.error(item.path, ex)
+        data["jobs"] = waiting
+        config.write_json(config.path("jobs"), data)
+        return done
+
+    # ------------------------------------------------ pinned folders: "pin it?"
+    def _answer_questions(self) -> None:
+        """Thread: one message box at a time, so tidying never waits for the user."""
+        while True:
+            folder = self.questions.get()
+            name = os.path.basename(folder)
+            text = (f'You created the folder "{name}" in {config.short(os.path.dirname(folder))}.\n\n'
+                    f"PIN it?\nNew files about \"{name}\" (by name or by content) and files similar to the ones "
+                    "you put inside will be filed there.\n\nYou can change your mind any time:  desktidy pinned")
+            try:
+                yes = winapi.ask_yes_no(text, f"{APP_NAME} - new folder")
+                if not os.path.isdir(folder):
+                    continue
+                if yes:
+                    folders.pin(folder)
+                    log.info(f"PINNED: {folder}")
+                else:
+                    folders.never_ask(folder)
+                    log.info(f"not pinned (answered no): {folder}")
+            except Exception as ex:
+                log.info(f"ERROR asking about {folder}: {ex!r}")
+
+    def suggest_pins(self, cfg: config.Config) -> None:
+        if self.opts.dry_run or self.opts.once or not cfg.get("pinned_folders", {}).get("ask", True):
+            return
+        new = [p for p in folders.suggestions(cfg) if os.path.normcase(p) not in self.asked]
+        if not new:
+            return
+        d = folders.load_pinned()
+        d["seen"] += new  # asked once, whatever the answer
+        folders.save_pinned(d)
+        for p in new:
+            self.asked.add(os.path.normcase(p))
+            self.questions.put(p)
+
+    # ------------------------------------------------ bookkeeping
+    def error(self, path: str, ex: Exception) -> None:
+        if self.errors.get(path) != repr(ex):  # don't repeat the same error at every pass
+            self.errors[path] = repr(ex)
+            log.info(f"ERROR with {path}: {ex!r}")
+            self.state["last_error"] = f"{datetime.now():%Y-%m-%d %H:%M} {os.path.basename(path)}: {ex}"
+
+    def save_state(self, **extra) -> None:
+        if self.opts.dry_run or self.opts.once:
+            return
+        if self.state["date"] != date.today().isoformat():
+            self.state.update(date=date.today().isoformat(), moved_today=0)
+        self.state.update(extra)
+        try:
+            config.write_json(config.path("state"), self.state)
+        except OSError:
+            pass
+
+    @staticmethod
+    def wait(seconds: float) -> bool:
+        """Sleep until the next pass; False if a stop was requested meanwhile (STOP file)."""
+        end = time.time() + seconds
+        stop = config.path("stop")
+        while time.time() < end:
+            if os.path.exists(stop):
+                return False
+            time.sleep(1)
+        return not os.path.exists(stop)
+
+    def run(self) -> None:
+        if not (self.opts.dry_run or self.opts.once):
+            if not winapi.claim_single_instance(config.SERVICE_MUTEX):
+                return
+            try:
+                os.remove(config.path("stop"))  # a stop request left over from before
+            except OSError:
+                pass
+            threading.Thread(target=self._answer_questions, daemon=True).start()
+        log.info(f"start v{__version__}" + (" (dry run)" if self.opts.dry_run else ""))
+        while True:
+            interval = 30
+            try:
+                cfg = config.load_config(self.opts.config_file)
+                interval = cfg.get("interval_seconds", 30)
+                paused, _ = paused_until()
+                if not paused:
+                    lines = self.tick(cfg)
+                    if lines and not self.opts.dry_run:
+                        winapi.notify(f"{APP_NAME}: {len(lines)} item{'s' if len(lines) > 1 else ''} tidied",
+                                      "\n".join(lines[:4]) + ("\n..." if len(lines) > 4 else ""))
+                    self.suggest_pins(cfg)
+                self.save_state(last_pass=datetime.now().isoformat(timespec="seconds"), paused=paused,
+                                ai_pending=len(self.pending_paths()))
+            except Exception as ex:
+                log.info(f"ERROR: {ex!r}")
+                self.save_state(last_error=f"{datetime.now():%Y-%m-%d %H:%M} {ex}")
+            if self.opts.dry_run or self.opts.once:
+                return
+            if not self.wait(interval):
+                log.info("stop requested (desktidy stop)")
+                try:
+                    os.remove(config.path("stop"))
+                except OSError:
+                    pass
+                self.save_state(stopped=datetime.now().isoformat(timespec="seconds"))
+                return
+
+
+def paused_until() -> tuple[bool, datetime | None]:
+    """(paused?, until when or None). An expired pause is removed."""
+    file = config.path("pause")
+    if not os.path.exists(file):
+        return False, None
+    try:
+        with open(file, encoding="utf-8") as f:
+            text = f.read().strip()
+    except OSError:
+        return True, None
+    if text.startswith("until="):
+        try:
+            until = datetime.fromisoformat(text[6:])
+        except ValueError:
+            return True, None
+        if datetime.now() >= until:
+            try:
+                os.remove(file)
+            except OSError:
+                pass
+            return False, None
+        return True, until
+    return True, None
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(prog="desktidy-service", description=f"{APP_NAME} background service")
+    parser.add_argument("--dry-run", action="store_true", help="show what would happen, change nothing")
+    parser.add_argument("--once", action="store_true", help="one pass, then exit")
+    parser.add_argument("--no-ai", action="store_true", help="never ask the AI")
+    parser.add_argument("--now", action="store_true", help="ignore waiting times (with --dry-run)")
+    parser.add_argument("--config", help="use another rules.json")
+    a = parser.parse_args(argv)
+    opts = Options(a.dry_run, a.once or a.dry_run, a.no_ai, a.now and a.dry_run, a.config)
+    setup_logging(opts)
+    Service(opts).run()
+
+
+if __name__ == "__main__":
+    main()

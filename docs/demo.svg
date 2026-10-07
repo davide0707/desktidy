@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="587" viewBox="0 0 920 587">
+<rect width="100%" height="100%" rx="10" fill="#0b1120"/>
+<rect width="100%" height="30" rx="10" fill="#1e293b"/><rect y="20" width="100%" height="10" fill="#1e293b"/>
+<circle cx="20" cy="15" r="6" fill="#f87171"/><circle cx="40" cy="15" r="6" fill="#facc15"/><circle cx="60" cy="15" r="6" fill="#4ade80"/>
+<text x="50%" y="20" text-anchor="middle" fill="#94a3b8" font-family="Segoe UI, sans-serif" font-size="13">Command Prompt - desktidy</text>
+<g font-family="Cascadia Mono, Consolas, DejaVu Sans Mono, Menlo, monospace" font-size="14" xml:space="preserve" style="white-space:pre">
+<text x="22" y="67"><tspan fill="#22d3ee">&#160;██████╗&#160;███████╗███████╗██╗&#160;&#160;██╗████████╗██╗██████╗&#160;██╗&#160;&#160;&#160;██╗</tspan></text>
+<text x="22" y="86"><tspan fill="#22d3ee">&#160;██╔══██╗██╔════╝██╔════╝██║&#160;██╔╝╚══██╔══╝██║██╔══██╗╚██╗&#160;██╔╝</tspan></text>
+<text x="22" y="105"><tspan fill="#60a5fa">&#160;██║&#160;&#160;██║█████╗&#160;&#160;███████╗█████╔╝&#160;&#160;&#160;&#160;██║&#160;&#160;&#160;██║██║&#160;&#160;██║&#160;╚████╔╝&#160;</tspan></text>
+<text x="22" y="124"><tspan fill="#60a5fa">&#160;██║&#160;&#160;██║██╔══╝&#160;&#160;╚════██║██╔═██╗&#160;&#160;&#160;&#160;██║&#160;&#160;&#160;██║██║&#160;&#160;██║&#160;&#160;╚██╔╝&#160;&#160;</tspan></text>
+<text x="22" y="143"><tspan fill="#c084fc">&#160;██████╔╝███████╗███████║██║&#160;&#160;██╗&#160;&#160;&#160;██║&#160;&#160;&#160;██║██████╔╝&#160;&#160;&#160;██║&#160;&#160;&#160;</tspan></text>
+<text x="22" y="162"><tspan fill="#c084fc">&#160;╚═════╝&#160;╚══════╝╚══════╝╚═╝&#160;&#160;╚═╝&#160;&#160;&#160;╚═╝&#160;&#160;&#160;╚═╝╚═════╝&#160;&#160;&#160;&#160;╚═╝&#160;&#160;&#160;</tspan></text>
+<text x="22" y="181"><tspan fill="#64748b">&#160;────────────────────────────────────────────────────────────────</tspan></text>
+<text x="22" y="200"><tspan fill="#f8fafc">&#160;&#160;&#160;DeskTidy</tspan><tspan fill="#64748b">&#160;v1.0.0&#160;&#160;::&#160;&#160;</tspan><tspan fill="#cbd5e1">your&#160;files,&#160;sorted&#160;while&#160;you&#160;work</tspan></text>
+<text x="22" y="219"><tspan fill="#64748b">&#160;&#160;&#160;by&#160;</tspan><tspan fill="#4ade80">Di&#160;Filippo&#160;Davide</tspan><tspan fill="#64748b">&#160;&#160;·&#160;&#160;github.com/davide0707/desktidy</tspan></text>
+<text x="22" y="238"><tspan fill="#64748b">&#160;────────────────────────────────────────────────────────────────</tspan></text>
+<text x="22" y="257"><tspan fill="#4ade80">&#160;&#160;&#160;●&#160;RUNNING</tspan><tspan fill="#64748b">&#160;&#160;&#160;|&#160;&#160;&#160;</tspan><tspan fill="#cbd5e1">AI:&#160;</tspan><tspan fill="#22d3ee">moderate</tspan><tspan fill="#64748b">&#160;&#160;&#160;|&#160;&#160;&#160;</tspan><tspan fill="#cbd5e1">AI&#160;spend:&#160;$0.05</tspan></text>
+<text x="22" y="276"></text>
+<text x="22" y="295"><tspan fill="#4ade80">┌──(</tspan><tspan fill="#60a5fa">you@desktidy</tspan><tspan fill="#4ade80">)-[</tspan><tspan fill="#4ade80">running</tspan><tspan fill="#4ade80">]</tspan></text>
+<text x="22" y="314"><tspan fill="#4ade80">└─</tspan><tspan fill="#60a5fa">$&#160;</tspan><tspan fill="#f8fafc">where&#160;invoice</tspan></text>
+<text x="22" y="333"></text>
+<text x="22" y="352"><tspan fill="#f8fafc">&#160;&#160;&#160;&#160;1&#160;</tspan><tspan fill="#64748b">07/10&#160;21:04&#160;&#160;</tspan><tspan fill="#f8fafc">scan0001.pdf</tspan></text>
+<text x="22" y="371"><tspan fill="#cbd5e1">&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;-&gt;&#160;</tspan><tspan fill="#4ade80">Documents\04_Personal\Bills_and_Receipts</tspan><tspan fill="#cbd5e1">\</tspan><tspan fill="#f8fafc">Invoice_2231_Northwind_Energy.pdf</tspan></text>
+<text x="22" y="390"><tspan fill="#64748b">&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;why:&#160;text&#160;contains&#160;&#x27;invoice&#x27;;&#160;about&#160;vat,&#160;amount&#160;due,&#160;due&#160;date;&#160;renamed&#160;(generic&#160;name)</tspan></text>
+<text x="22" y="409"><tspan fill="#f8fafc">&#160;&#160;&#160;&#160;2&#160;</tspan><tspan fill="#64748b">07/10&#160;18:40&#160;&#160;</tspan><tspan fill="#f8fafc">Document1.docx</tspan></text>
+<text x="22" y="428"><tspan fill="#cbd5e1">&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;-&gt;&#160;</tspan><tspan fill="#4ade80">Documents\01_Study\Courses\Maths</tspan><tspan fill="#cbd5e1">\</tspan><tspan fill="#f8fafc">Calculus_Limits_and_Derivatives.docx</tspan></text>
+<text x="22" y="447"><tspan fill="#64748b">&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;why:&#160;AI&#160;(high):&#160;calculus&#160;lecture&#160;notes;&#160;renamed&#160;(name&#160;suggested&#160;by&#160;AI)</tspan></text>
+<text x="22" y="466"></text>
+<text x="22" y="485"><tspan fill="#4ade80">┌──(</tspan><tspan fill="#60a5fa">you@desktidy</tspan><tspan fill="#4ade80">)-[</tspan><tspan fill="#4ade80">running</tspan><tspan fill="#4ade80">]</tspan></text>
+<text x="22" y="504"><tspan fill="#4ade80">└─</tspan><tspan fill="#60a5fa">$&#160;</tspan><tspan fill="#f8fafc">spend</tspan></text>
+<text x="22" y="523"><tspan fill="#60a5fa">&#160;&#160;[*]&#160;</tspan><tspan fill="#cbd5e1">Today&#160;</tspan><tspan fill="#64748b">................&#160;</tspan><tspan fill="#cbd5e1">$0.0011&#160;&#160;&#160;4&#160;files&#160;&#160;&#160;</tspan><tspan fill="#64748b">(limit&#160;30/day)</tspan></text>
+<text x="22" y="542"><tspan fill="#60a5fa">&#160;&#160;[*]&#160;</tspan><tspan fill="#cbd5e1">Budget&#160;</tspan><tspan fill="#64748b">...............&#160;</tspan><tspan fill="#4ade80">█</tspan><tspan fill="#64748b">░░░░░░░░░░░░░░░░░░░</tspan><tspan fill="#cbd5e1">&#160;1%&#160;of&#160;$5.00</tspan></text>
+<text x="22" y="561"><tspan fill="#60a5fa">&#160;&#160;[*]&#160;</tspan><tspan fill="#cbd5e1">Credit&#160;</tspan><tspan fill="#64748b">...............&#160;</tspan><tspan fill="#cbd5e1">$4.85&#160;on&#160;2026-10-07&#160;&#160;-&gt;&#160;&#160;about&#160;</tspan><tspan fill="#4ade80">$4.84</tspan><tspan fill="#cbd5e1">&#160;left</tspan></text>
+</g></svg>

@@ -1,0 +1,21 @@
+name: Feature request
+description: An idea to make DeskTidy smarter or easier to use
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What would you like DeskTidy to do?
+      description: Describe the situation and the files involved.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: How could it work?
+  - type: checkboxes
+    id: offline
+    attributes:
+      label: Offline first
+      options:
+        - label: This could work without the AI

@@ -1,0 +1,23 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.ruff_cache/
+
+# Personal data: DeskTidy keeps it in %LOCALAPPDATA%\DeskTidy, these entries are only a safety net
+rules.json
+moves.csv
+*.log
+ai_usage.json
+ai_jobs.json
+pinned.json
+kept.json
+state.json
+setup.json
+PAUSE
+STOP
+.env
+*.key
