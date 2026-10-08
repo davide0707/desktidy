@@ -17,8 +17,14 @@ class IsolatedTest(unittest.TestCase):
         self.tmp = tempfile.mkdtemp(prefix="desktidy_test_")
         self._home = os.environ.get("DESKTIDY_HOME")
         os.environ["DESKTIDY_HOME"] = os.path.join(self.tmp, "_data")
+        # {HOME} and {DOCS} point inside the test folder too: no test may ever reach the real user folders
+        self._builtins = dict(config.BUILTIN_VARIABLES)
+        config.BUILTIN_VARIABLES.update(HOME=os.path.join(self.tmp, "home"),
+                                        DOCS=os.path.join(self.tmp, "home", "Documents"))
 
     def tearDown(self):
+        config.BUILTIN_VARIABLES.clear()
+        config.BUILTIN_VARIABLES.update(self._builtins)
         if self._home is None:
             os.environ.pop("DESKTIDY_HOME", None)
         else:

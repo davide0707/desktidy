@@ -27,6 +27,11 @@ _FILES = {
     "kept": "kept.json",            # files restored by undo: left alone until they change
     "setup": "setup.json",          # when the house rules were accepted
     "advice": "advice.json",        # the latest organisation tips (desktidy advice)
+    "ops": "folder_ops.json",       # folder changes applied from the advice, to undo them
+    "deadlines": "deadlines.json",  # payment and submission deadlines found in documents
+    "learned": "learned.json",      # your corrections and the rules learned from them
+    "imports": "imports.json",      # photos already imported from memory cards
+    "updates": "updates.json",      # the latest version seen on GitHub
     "pause": "PAUSE",               # exists = paused (may contain "until=ISO-TIME")
     "stop": "STOP",                 # exists = the service stops at its next check
     "bin": "bin",                   # holds desktidy.cmd, added to PATH by "desktidy install"
@@ -109,19 +114,31 @@ def write_json(file: str, data, indent: int | None = 1) -> None:
 
 
 # ---------------------------------------------------------------- settings
+BUILTIN_VARIABLES = {"HOME": "%USERPROFILE%", "DOCS": "%USERPROFILE%\\Documents"}  # rules.json may redefine them
+
+
 class Config(dict):
     """rules.json as a dict, plus {VARIABLE} expansion for paths."""
 
     def __init__(self, data: dict, source: str = ""):
         super().__init__(data)
         self.source = source
-        self._vars = {k: os.path.expandvars(v) for k, v in data.get("variables", {}).items()}
+        merged = {**BUILTIN_VARIABLES, **data.get("variables", {})}
+        self._vars = {k: os.path.expandvars(v) for k, v in merged.items()}
 
     def expand(self, p: str) -> str:
         for _ in range(3):  # variables may use other variables: {YEAR} = {UNI}\...
             for k, v in self._vars.items():
                 p = p.replace("{" + k + "}", v)
         return os.path.normpath(os.path.expandvars(p))
+
+    def folder(self, p: str) -> str:
+        """expand() for a folder DeskTidy is about to create or fill: refuses unknown {VARIABLES}, so a typo never
+        creates a folder literally called "{DOCS}"."""
+        path = self.expand(p)
+        if "{" in path or not os.path.isabs(path):
+            raise OSError(f"unknown variable or relative path in '{p}' (see the variables in rules.json)")
+        return path
 
     @property
     def installer_dir(self) -> str | None:
@@ -160,9 +177,41 @@ def ai_mode(cfg: dict) -> str:
     return mode if mode in AI_MODES else "off"
 
 
-def daily_limit(cfg: dict) -> int:
+UNLIMITED = "unlimited"
+UNLIMITED_WORDS = {"unlimited", "illimitato", "illimitati", "none", "no-limit", "nolimit", "inf", "infinite", "∞"}
+
+
+def parse_limit(text) -> int | str | None:
+    """'30' -> 30, 'unlimited' (or 'illimitati', 'none'...) -> "unlimited", anything else -> None."""
+    t = str(text).strip().lower()
+    if t in UNLIMITED_WORDS:
+        return UNLIMITED
+    return int(t) if t.isdigit() else None
+
+
+def _limit(value, default: int | None) -> int | None:
+    if value == UNLIMITED:
+        return None
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+        return value
+    return default
+
+
+def daily_limit(cfg: dict) -> int | None:
+    """Files the AI may look at per day: ai.max_files_per_day (a number or "unlimited"), else the mode's default.
+    None means no limit."""
     ai = cfg.get("ai", {})
-    return ai["max_files_per_day"] if isinstance(ai.get("max_files_per_day"), int) else AI_MODES[ai_mode(cfg)][1]
+    return _limit(ai.get("max_files_per_day"), AI_MODES[ai_mode(cfg)][1])
+
+
+def tidy_limit(cfg: dict) -> int | None:
+    """Files DeskTidy may tidy per day, AI or not: limits.files_per_day (a number or "unlimited", the default).
+    None means no limit."""
+    return _limit(cfg.get("limits", {}).get("files_per_day", UNLIMITED), None)
+
+
+def limit_text(limit: int | None) -> str:
+    return "unlimited" if limit is None else f"{limit}/day"
 
 
 def ai_model(cfg: dict) -> str:

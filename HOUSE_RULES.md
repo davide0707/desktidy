@@ -29,4 +29,5 @@ and asks you to accept them. You can read them any time with `desktidy guide`.
 
 6. **You're in charge.**
    `desktidy pause 1h` · `desktidy stop` · `desktidy preview` shows what would happen without moving anything ·
+   `desktidy limit 30` tidies at most 30 files a day (or `unlimited`) ·
    `desktidy rules` edits every destination.

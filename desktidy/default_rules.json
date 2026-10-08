@@ -17,6 +17,26 @@
   "analysis": { "ocr": true, "similarity": true },
   "rename": { "mode": "smart" },
   "pinned_folders": { "min_required": 2, "ask": true, "ask_for_new_folders_in": ["{HOME}\\Desktop"], "wait_seconds": 60 },
+  "limits": {
+    "_note": "files_per_day: how many files DeskTidy may tidy per day, AI or not: a number or \"unlimited\" (desktidy limit 30 | unlimited). The AI has its own limit: ai.max_files_per_day (desktidy ai max 50 | unlimited).",
+    "files_per_day": "unlimited"
+  },
+  "search": { "_note": "desktidy find <words>: local full-text index of the tidied documents (index.db, never sent anywhere).", "enabled": true, "index_private": true },
+  "deadlines": { "_note": "Payment and submission dates found in documents; reminders this many days before (0 = on the day).", "enabled": true, "remind_days": [7, 1, 0] },
+  "archive": {
+    "_note": "Items untouched for after_days on the Desktop and in the to-sort folder go to folder\\<year> (desktidy archive on). zip = compress each item.",
+    "enabled": false, "after_days": 180, "folder": "{DOCS}\\Archive", "zip": false,
+    "sources": ["{HOME}\\Desktop", "{DOCS}\\00_Inbox\\To_Sort"]
+  },
+  "import": {
+    "_note": "Memory cards with a DCIM folder: photos and videos copied by date (pattern: {year} {month} {day}). auto = without asking.",
+    "enabled": true, "auto": false, "photos": "{HOME}\\Pictures", "videos": "{HOME}\\Videos",
+    "pattern": "{year}\\{year}-{month}", "delete_after": false
+  },
+  "learn": { "_note": "Corrections (files you moved yourself) needed before a rule is proposed (desktidy learn).", "min_examples": 2 },
+  "groups": { "_note": "Files with something in common needed to propose a group of the to-sort pile (desktidy groups).", "min_files": 3 },
+  "tray": true,
+  "updates": { "_note": "Once a week, one anonymous request to GitHub for the latest version.", "check": true },
   "ai": {
     "_note": "provider: groq (free) | gemini (free tier) | mistral (free plan) | openrouter (free models) | ollama (free, on this PC) | claude | openai | custom. Change it with: desktidy ai provider, then: desktidy key. mode: off | limited (files the offline engine can't place, 10/day) | moderate (also low-confidence ones, 30/day) | ai-only (every non-private file, 100/day; also fixes names that don't match the content and suggests a better organisation: desktidy advice). model: empty = the provider's default. delivery: batch (Claude only, half price, minutes) | instant. gather_seconds: files for the AI wait up to this long to share one request (90). advice: auto (ai-only mode) | on | off; advice_after_files (30), advice_every_days (7), language (empty = the language of your folder names).",
     "provider": "groq",

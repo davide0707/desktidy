@@ -1,0 +1,402 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DeskTidy settings</title>
+<style>
+:root {
+  --bg: #f6f7fb; --panel: #ffffff; --text: #1d2130; --muted: #667085; --line: #e3e6ef; --accent: #5b5ef2;
+  --accent-soft: #eceeff; --ok: #12805c; --warn: #b54708; --err: #c4320a; --input: #ffffff; --chip: #f1f3f9;
+  --shadow: 0 1px 2px rgba(16, 24, 40, .06), 0 1px 3px rgba(16, 24, 40, .08);
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #11131a; --panel: #1a1d27; --text: #e7e9f0; --muted: #9aa1b5; --line: #2b2f3d; --accent: #8b8dff;
+          --accent-soft: #262a48; --ok: #3ccf91; --warn: #f5a524; --err: #ff6b5b; --input: #141720; --chip: #232736;
+          --shadow: none; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; font: 14px/1.5 "Segoe UI", system-ui, sans-serif; background: var(--bg); color: var(--text); }
+header { display: flex; align-items: center; gap: 12px; padding: 14px 24px; background: var(--panel);
+         border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 2; }
+header h1 { font-size: 17px; margin: 0; font-weight: 600; }
+header .file { color: var(--muted); font-size: 12px; margin-left: auto; overflow: hidden; text-overflow: ellipsis;
+               white-space: nowrap; max-width: 45%; }
+.logo { width: 28px; height: 28px; border-radius: 8px; background: linear-gradient(#3b82f6, #7c3aed);
+        display: grid; place-items: center; color: #fff; font-weight: 700; }
+nav { display: flex; gap: 4px; padding: 10px 24px 0; background: var(--panel); border-bottom: 1px solid var(--line);
+      overflow-x: auto; }
+nav button { border: 0; background: none; padding: 9px 14px; color: var(--muted); font: inherit; cursor: pointer;
+             border-bottom: 2px solid transparent; white-space: nowrap; }
+nav button.on { color: var(--accent); border-color: var(--accent); font-weight: 600; }
+main { max-width: 1100px; margin: 0 auto; padding: 20px 24px 120px; }
+section { display: none; } section.on { display: block; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px;
+        margin-bottom: 16px; box-shadow: var(--shadow); }
+.card h2 { font-size: 15px; margin: 0 0 4px; }
+.card p.hint { margin: 0 0 14px; color: var(--muted); font-size: 13px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px 18px; }
+label.f { display: flex; flex-direction: column; gap: 5px; font-size: 13px; font-weight: 600; }
+label.f small { font-weight: 400; color: var(--muted); }
+input[type=text], input[type=number], select, textarea {
+  font: inherit; color: var(--text); background: var(--input); border: 1px solid var(--line); border-radius: 8px;
+  padding: 7px 10px; width: 100%; }
+textarea { min-height: 64px; resize: vertical; }
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+label.c { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+button.b { font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--text);
+           border-radius: 8px; padding: 7px 14px; cursor: pointer; }
+button.b:hover { border-color: var(--accent); }
+button.p { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+button.d { color: var(--err); }
+button:disabled { opacity: .5; cursor: default; }
+.rules { display: grid; grid-template-columns: 300px 1fr; gap: 16px; }
+@media (max-width: 760px) { .rules { grid-template-columns: 1fr; } }
+.list { max-height: 70vh; overflow: auto; padding: 0; margin: 8px 0 0; list-style: none; }
+.list li { padding: 8px 10px; border-radius: 8px; cursor: pointer; display: flex; justify-content: space-between;
+           gap: 8px; }
+.list li:hover { background: var(--chip); }
+.list li.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.list li span.dest { color: var(--muted); font-size: 12px; font-weight: 400; overflow: hidden;
+                     text-overflow: ellipsis; white-space: nowrap; max-width: 120px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chips label { background: var(--chip); border-radius: 99px; padding: 3px 10px; font-size: 12px; cursor: pointer;
+               display: flex; gap: 5px; align-items: center; }
+.tag { font-size: 11px; border-radius: 99px; padding: 1px 8px; background: var(--chip); color: var(--muted); }
+.tag.priv { color: var(--warn); }
+table { width: 100%; border-collapse: collapse; }
+td, th { text-align: left; padding: 7px 6px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+th { font-size: 12px; color: var(--muted); font-weight: 600; }
+td.mono, .mono { font-family: Consolas, monospace; font-size: 12px; color: var(--muted); }
+footer { position: fixed; bottom: 0; left: 0; right: 0; background: var(--panel); border-top: 1px solid var(--line);
+         padding: 12px 24px; display: flex; gap: 10px; align-items: center; z-index: 3; }
+#status { flex: 1; font-size: 13px; color: var(--muted); }
+#status.dirty { color: var(--warn); }
+#msgs { max-width: 1100px; margin: 0 auto; padding: 0 24px; }
+.msg { border-radius: 10px; padding: 10px 14px; margin-top: 12px; font-size: 13px; border: 1px solid var(--line);
+       background: var(--panel); }
+.msg.err { border-color: var(--err); color: var(--err); }
+.msg.warn { border-color: var(--warn); }
+.msg.ok { border-color: var(--ok); color: var(--ok); }
+.msg ul { margin: 6px 0 0; padding-left: 18px; }
+.empty { color: var(--muted); padding: 20px; text-align: center; }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">✓</div>
+  <h1>DeskTidy settings</h1>
+  <span class="tag" id="ver"></span>
+  <span class="file" id="file"></span>
+</header>
+<nav id="tabs">
+  <button data-tab="general" class="on">General</button>
+  <button data-tab="ai">AI</button>
+  <button data-tab="rules">Rules</button>
+  <button data-tab="folders">Folders</button>
+  <button data-tab="extras">Deadlines, archive, import</button>
+  <button data-tab="json">Advanced (JSON)</button>
+</nav>
+<div id="msgs"></div>
+<main>
+  <section id="general" class="on"></section>
+  <section id="ai"></section>
+  <section id="rules"></section>
+  <section id="folders"></section>
+  <section id="extras"></section>
+  <section id="json">
+    <div class="card">
+      <h2>rules.json</h2>
+      <p class="hint">Every setting as JSON. "Apply" updates the other tabs; nothing is written until you press Save.</p>
+      <textarea id="raw" spellcheck="false" style="min-height: 60vh; font-family: Consolas, monospace; font-size: 12px"></textarea>
+      <div class="row" style="margin-top: 10px"><button class="b" id="applyRaw">Apply</button></div>
+    </div>
+  </section>
+</main>
+<footer>
+  <span id="status">Loading...</span>
+  <button class="b" id="check">Check</button>
+  <button class="b p" id="save" disabled>Save</button>
+  <button class="b" id="close">Close editor</button>
+</footer>
+<script>
+"use strict";
+const TOKEN = "__TOKEN__";
+let S = null, R = null, current = 0, dirty = false;
+
+async function api(path, body) {
+  const r = await fetch(path, {method: body === undefined ? "GET" : "POST",
+    headers: {"X-DeskTidy-Token": TOKEN, "Content-Type": "application/json"},
+    body: body === undefined ? undefined : JSON.stringify(body)});
+  return {status: r.status, data: await r.json()};
+}
+const $ = (s, el = document) => el.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+function get(path) { return path.split(".").reduce((o, k) => (o == null ? undefined : o[k]), R); }
+function set(path, value) {
+  const keys = path.split("."); let o = R;
+  for (const k of keys.slice(0, -1)) { if (typeof o[k] !== "object" || o[k] === null) o[k] = {}; o = o[k]; }
+  if (value === undefined) delete o[keys.at(-1)]; else o[keys.at(-1)] = value;
+  touch();
+}
+function touch() { dirty = true; $("#status").textContent = "Unsaved changes"; $("#status").className = "dirty"; $("#save").disabled = false; }
+function words(text) { return text.split(/[,\n]/).map(w => w.trim()).filter(Boolean); }
+
+/* ---------- small form builders (each input writes straight into R) ---------- */
+function text(label, path, hint = "", placeholder = "") {
+  const id = "f" + Math.random().toString(36).slice(2);
+  return `<label class="f">${esc(label)}${hint ? ` <small>${esc(hint)}</small>` : ""}
+    <input type="text" id="${id}" data-path="${path}" data-kind="text" value="${esc(get(path) ?? "")}" placeholder="${esc(placeholder)}"></label>`;
+}
+function num(label, path, hint = "", min = 0) {
+  return `<label class="f">${esc(label)}${hint ? ` <small>${esc(hint)}</small>` : ""}
+    <input type="number" min="${min}" data-path="${path}" data-kind="num" value="${esc(get(path) ?? "")}"></label>`;
+}
+function sel(label, path, options, hint = "", fallback = "") {
+  const v = get(path) ?? fallback;
+  return `<label class="f">${esc(label)}${hint ? ` <small>${esc(hint)}</small>` : ""}<select data-path="${path}" data-kind="text">
+    ${Object.entries(options).map(([k, t]) => `<option value="${esc(k)}" ${k === v ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></label>`;
+}
+function check(label, path, fallback = false) {
+  const v = get(path); return `<label class="c"><input type="checkbox" data-path="${path}" data-kind="bool" ${(v ?? fallback) ? "checked" : ""}> ${esc(label)}</label>`;
+}
+function limit(label, path, hint, autoText) {
+  const v = get(path), mode = v === undefined || v === null ? "auto" : v === "unlimited" ? "unlimited" : "number";
+  return `<label class="f">${esc(label)} <small>${esc(hint)}</small>
+    <div class="row"><select data-limit="${path}" style="width:auto">
+      ${autoText ? `<option value="auto" ${mode === "auto" ? "selected" : ""}>${esc(autoText)}</option>` : ""}
+      <option value="unlimited" ${mode === "unlimited" ? "selected" : ""}>Unlimited</option>
+      <option value="number" ${mode === "number" ? "selected" : ""}>At most...</option></select>
+      <input type="number" min="0" data-limit-n="${path}" value="${mode === "number" ? v : ""}" style="width:110px" ${mode === "number" ? "" : "disabled"}> files a day</div></label>`;
+}
+function bind(root) {
+  root.querySelectorAll("[data-path]").forEach(el => el.addEventListener(el.type === "checkbox" ? "change" : "input", () => {
+    const k = el.dataset.kind;
+    set(el.dataset.path, k === "bool" ? el.checked : k === "num" ? (el.value === "" ? undefined : Number(el.value)) : el.value);
+  }));
+  root.querySelectorAll("[data-limit]").forEach(sel => {
+    const path = sel.dataset.limit, n = root.querySelector(`[data-limit-n="${path}"]`);
+    const apply = () => {
+      n.disabled = sel.value !== "number";
+      set(path, sel.value === "auto" ? undefined : sel.value === "unlimited" ? "unlimited" : (n.value === "" ? 0 : Number(n.value)));
+    };
+    sel.addEventListener("change", apply); n.addEventListener("input", apply);
+  });
+}
+
+/* ---------- tabs ---------- */
+function renderGeneral() {
+  const el = $("#general");
+  el.innerHTML = `
+  <div class="card"><h2>How much DeskTidy does</h2><p class="hint">Limits apply per day and reset at midnight.</p><div class="grid">
+    ${limit("Files tidied per day", "limits.files_per_day", "AI or not; extra files wait for tomorrow", "")}
+    ${sel("Renaming", "rename.mode", S.rename_modes, "", "smart")}
+    ${num("Check every (seconds)", "interval_seconds", "how often the folders are looked at", 5)}
+  </div></div>
+  <div class="card"><h2>Where unplaced files go</h2><div class="grid">
+    ${text("To-sort folder", "default_destination", "files no rule recognises")}
+  </div></div>
+  <div class="card"><h2>Pinned folders</h2><p class="hint">Folders you chose: new files about them go there.</p><div class="grid">
+    ${num("Pinned folders needed before starting", "pinned_folders.min_required", "0 = no first-run requirement")}
+    <div>${check('Ask "Pin it?" for new Desktop folders', "pinned_folders.ask", true)}</div>
+  </div></div>
+  <div class="card"><h2>Integration</h2><div class="grid">
+    <div>${check("Icon in the notification area (tray)", "tray", true)}</div>
+    <div>${check("Search index (desktidy find)", "search.enabled", true)}</div>
+    <div>${check("Index files of private rules too (stays on this PC)", "search.index_private", true)}</div>
+    <div>${check("Check for new versions once a week", "updates.check", true)}</div>
+  </div></div>`;
+  bind(el);
+}
+function renderAI() {
+  const el = $("#ai");
+  const prov = Object.fromEntries(Object.entries(S.providers).map(([k, p]) => [k, `${p.name}${p.free ? " (free)" : ""}`]));
+  el.innerHTML = `
+  <div class="card"><h2>AI service</h2><p class="hint">Keys are not stored here: set them with <span class="mono">desktidy key</span>.</p><div class="grid">
+    ${sel("Service", "ai.provider", prov, "", "groq")}
+    ${text("Model", "ai.model", "empty = the service's default", S.providers[get("ai.provider") || "groq"]?.model || "")}
+    ${sel("Mode", "ai.mode", S.ai_modes, "", "off")}
+    ${limit("Files the AI looks at", "ai.max_files_per_day", "per day", "The mode's default")}
+  </div></div>
+  <div class="card"><h2>Cost and quality</h2><div class="grid">
+    ${num("Budget (USD, total)", "ai.budget_usd", "the AI stops when the spend reaches it")}
+    ${sel("Delivery", "ai.delivery", {batch: "Batch: half price, minutes (Claude)", instant: "Instant: seconds"}, "", "batch")}
+    ${sel("Accept answers", "ai.min_confidence", {high: "Only sure ones (recommended)", medium: "Sure or likely"}, "", "high")}
+    ${num("Gather files for (seconds)", "ai.gather_seconds", "files arriving together share one request")}
+  </div></div>
+  <div class="card"><h2>Organisation advice</h2><div class="grid">
+    ${sel("Advice", "ai.advice", {auto: "Automatic in ai-only mode", on: "Automatic in every AI mode", off: "Only when I ask"}, "", "auto")}
+    ${num("After how many tidied files", "ai.advice_after_files", "", 1)}
+    ${num("At most every (days)", "ai.advice_every_days", "", 1)}
+    ${text("Language", "ai.language", "empty = the language of your folder names")}
+  </div></div>
+  <div class="card"><h2>About you</h2><p class="hint">One line that helps the AI choose (optional).</p>
+    ${text("Context", "ai.user_context", "", "e.g. photographer; client shoots, invoices and contracts")}</div>`;
+  bind(el);
+}
+function renderRules() {
+  const el = $("#rules"), rules = R.rules || [];
+  if (current >= rules.length) current = Math.max(0, rules.length - 1);
+  const filter = ($("#ruleFilter")?.value || "").toLowerCase();
+  el.innerHTML = `<div class="rules">
+   <div class="card"><h2>Rules <span class="tag">${rules.length}</span></h2>
+     <p class="hint">Checked from the top: the first that matches wins.</p>
+     <input type="text" id="ruleFilter" placeholder="Filter..." value="${esc(filter)}">
+     <div class="row" style="margin-top:8px">
+       <button class="b" id="rAdd">Add</button><button class="b" id="rDup">Duplicate</button>
+       <button class="b" id="rUp" title="Move up">↑</button><button class="b" id="rDown" title="Move down">↓</button>
+       <button class="b d" id="rDel">Delete</button></div>
+     <ul class="list">${rules.map((r, i) => ({r, i})).filter(({r}) => !filter || JSON.stringify(r).toLowerCase().includes(filter))
+       .map(({r, i}) => `<li data-i="${i}" class="${i === current ? "on" : ""}"><span>${esc(r.name || "(no name)")}${r.private ? ' <span class="tag priv">private</span>' : ""}</span><span class="dest">${esc((r.destination || "").split("\\").pop())}</span></li>`).join("") || '<li class="empty">No rules</li>'}</ul>
+   </div>
+   <div class="card" id="ruleForm"></div></div>`;
+  $("#ruleFilter", el).addEventListener("input", () => { const pos = $("#ruleFilter").selectionStart; renderRules(); const f = $("#ruleFilter"); f.focus(); f.setSelectionRange(pos, pos); });
+  el.querySelectorAll(".list li[data-i]").forEach(li => li.addEventListener("click", () => { current = Number(li.dataset.i); renderRules(); }));
+  $("#rAdd").onclick = () => { R.rules.splice(current + 1, 0, {name: "New rule", name_words: [], destination: "{DOCS}\\"}); current++; touch(); renderRules(); };
+  $("#rDup").onclick = () => { if (!rules[current]) return; R.rules.splice(current + 1, 0, structuredClone(rules[current])); R.rules[current + 1].name += " (copy)"; current++; touch(); renderRules(); };
+  $("#rUp").onclick = () => { if (current > 0) { [R.rules[current - 1], R.rules[current]] = [R.rules[current], R.rules[current - 1]]; current--; touch(); renderRules(); } };
+  $("#rDown").onclick = () => { if (current < rules.length - 1) { [R.rules[current + 1], R.rules[current]] = [R.rules[current], R.rules[current + 1]]; current++; touch(); renderRules(); } };
+  $("#rDel").onclick = () => { if (rules[current] && confirm(`Delete the rule "${rules[current].name}"?`)) { R.rules.splice(current, 1); touch(); renderRules(); } };
+  renderRuleForm();
+}
+function renderRuleForm() {
+  const box = $("#ruleForm"), r = (R.rules || [])[current];
+  if (!r) { box.innerHTML = '<div class="empty">Add a rule to start.</div>'; return; }
+  const p = `rules.${current}`;
+  const listField = (label, key, hint) => `<label class="f">${esc(label)} <small>${esc(hint)}</small>
+    <textarea data-list="${key}">${esc((r[key] || []).join(", "))}</textarea></label>`;
+  box.innerHTML = `<h2>${esc(r.name || "Rule")}</h2><p class="hint">Words work in any language; plural, singular and one typo are tolerated.</p>
+   <div class="grid">${text("Name", p + ".name")}${text("Destination", p + ".destination", "variables: " + Object.keys(R.variables || {}).map(v => "{" + v + "}").join(" "))}</div>
+   <div class="grid" style="margin-top:14px">
+     ${listField("Words in the file name", "name_words", "comma separated")}
+     ${listField("Strong words in the content", "content_words", "one is enough")}
+     ${listField("Topics", "topics", "at least min topics must appear")}
+     ${listField("Extensions", "extensions", ".pdf, .stl ... (empty = any)")}
+   </div>
+   <div class="grid" style="margin-top:14px">
+     ${num("Min topics", p + ".min_topics", "empty = 2 or 3 by length", 1)}
+     ${sel("Applies to", p + ".type", {file: "Files", folder: "Folders", both: "Files and folders"}, "", "file")}
+     <div>${check("Private: never sent to the AI", p + ".private")}${check("Generic: a confident content match wins over the name", p + ".generic")}</div>
+   </div>
+   <label class="f" style="margin-top:14px">Recognised kinds <small>what DeskTidy understands by itself</small></label>
+   <div class="chips">${S.kinds.map(k => `<label><input type="checkbox" data-kindchip="${k}" ${(r.recognize || []).includes(k) ? "checked" : ""}>${k}</label>`).join("")}</div>`;
+  bind(box);
+  box.querySelectorAll("[data-list]").forEach(t => t.addEventListener("input", () => {
+    const v = words(t.value); if (v.length) r[t.dataset.list] = v; else delete r[t.dataset.list]; touch(); }));
+  box.querySelectorAll("[data-kindchip]").forEach(c => c.addEventListener("change", () => {
+    const set_ = new Set(r.recognize || []); c.checked ? set_.add(c.dataset.kindchip) : set_.delete(c.dataset.kindchip);
+    if (set_.size) r.recognize = [...set_]; else delete r.recognize; touch(); }));
+  box.querySelector(`[data-path="${p}.name"]`).addEventListener("change", renderRules);
+}
+function renderFolders() {
+  const el = $("#folders"), w = R.watched_folders || [], vars = R.variables || {};
+  el.innerHTML = `
+  <div class="card"><h2>Watched folders</h2><p class="hint">New items here are tidied after the waiting time.</p>
+   <table><tr><th>Folder</th><th>Wait (minutes)</th><th>Folders too</th><th></th></tr>
+   ${w.map((f, i) => `<tr><td><input type="text" data-w="${i}" data-k="path" value="${esc(f.path)}"></td>
+     <td style="width:120px"><input type="number" min="0" data-w="${i}" data-k="wait" value="${Math.round((f.wait_seconds ?? 120) / 60)}"></td>
+     <td style="width:90px"><input type="checkbox" data-w="${i}" data-k="dirs" ${f.include_folders ? "checked" : ""}></td>
+     <td style="width:80px"><button class="b d" data-wdel="${i}">Remove</button></td></tr>`).join("")}</table>
+   <div class="row" style="margin-top:10px"><button class="b" id="wAdd">Add a folder</button></div></div>
+  <div class="card"><h2>Variables</h2><p class="hint">Short names for paths, used as {NAME} in destinations.</p>
+   <table><tr><th>Name</th><th>Value</th><th>Means</th><th></th></tr>
+   ${Object.entries(vars).map(([k, v]) => `<tr><td style="width:150px"><input type="text" data-vk="${esc(k)}" value="${esc(k)}"></td>
+     <td><input type="text" data-vv="${esc(k)}" value="${esc(v)}"></td><td class="mono">${esc(S.expanded[k] || "")}</td>
+     <td style="width:80px"><button class="b d" data-vdel="${esc(k)}">Remove</button></td></tr>`).join("")}</table>
+   <div class="row" style="margin-top:10px"><button class="b" id="vAdd">Add a variable</button></div></div>
+  <div class="card"><h2>Pinned folders</h2><p class="hint">Pin more with the right-click menu or <span class="mono">desktidy pin</span>.</p>
+   ${S.pinned.length ? `<table>${S.pinned.map(p => `<tr><td class="mono">${esc(p)}</td><td style="width:90px"><button class="b d" data-unpin="${esc(p)}">Unpin</button></td></tr>`).join("")}</table>` : '<div class="empty">No pinned folders</div>'}
+  </div>`;
+  el.querySelectorAll("[data-w]").forEach(inp => inp.addEventListener(inp.type === "checkbox" ? "change" : "input", () => {
+    const f = R.watched_folders[Number(inp.dataset.w)], k = inp.dataset.k;
+    if (k === "path") f.path = inp.value; else if (k === "wait") f.wait_seconds = Math.max(0, Number(inp.value || 0)) * 60; else f.include_folders = inp.checked;
+    touch(); }));
+  el.querySelectorAll("[data-wdel]").forEach(b => b.onclick = () => { R.watched_folders.splice(Number(b.dataset.wdel), 1); touch(); renderFolders(); });
+  $("#wAdd").onclick = () => { (R.watched_folders ||= []).push({path: "{HOME}\\", wait_seconds: 600, include_folders: false}); touch(); renderFolders(); };
+  el.querySelectorAll("[data-vv]").forEach(inp => inp.addEventListener("input", () => { R.variables[inp.dataset.vv] = inp.value; touch(); }));
+  el.querySelectorAll("[data-vk]").forEach(inp => inp.addEventListener("change", () => {
+    const old = inp.dataset.vk, name = inp.value.trim().toUpperCase().replace(/[^A-Z0-9_]/g, "");
+    if (!name || name === old) return; const entries = Object.entries(R.variables).map(([k, v]) => [k === old ? name : k, v]);
+    R.variables = Object.fromEntries(entries); touch(); renderFolders(); }));
+  el.querySelectorAll("[data-vdel]").forEach(b => b.onclick = () => { delete R.variables[b.dataset.vdel]; touch(); renderFolders(); });
+  $("#vAdd").onclick = () => { let n = "NEW", i = 2; while (R.variables[n]) n = "NEW" + i++; (R.variables ||= {})[n] = "%USERPROFILE%\\"; touch(); renderFolders(); };
+  el.querySelectorAll("[data-unpin]").forEach(b => b.onclick = async () => {
+    if (!confirm("Unpin " + b.dataset.unpin + "? The folder and its files stay where they are.")) return;
+    await api("/api/unpin", {path: b.dataset.unpin}); S.pinned = S.pinned.filter(p => p !== b.dataset.unpin); renderFolders(); });
+}
+function renderExtras() {
+  const el = $("#extras");
+  el.innerHTML = `
+  <div class="card"><h2>Deadlines</h2><p class="hint">Dates to pay or submit something, found in your documents (offline).</p><div class="grid">
+    <div>${check("Find deadlines and remind me", "deadlines.enabled", true)}</div>
+    <label class="f">Remind me (days before) <small>comma separated, 0 = on the day</small>
+      <input type="text" id="remind" value="${esc((get("deadlines.remind_days") || [7, 1, 0]).join(", "))}"></label>
+  </div></div>
+  <div class="card"><h2>Archive</h2><p class="hint">Items untouched for a long time on the Desktop and in the to-sort folder go to Archive\\year.</p><div class="grid">
+    <div>${check("Archive automatically", "archive.enabled", false)}${check("Compress into .zip", "archive.zip", false)}</div>
+    ${num("Untouched for (days)", "archive.after_days", "", 7)}
+    ${text("Archive folder", "archive.folder", "", "{DOCS}\\Archive")}
+  </div></div>
+  <div class="card"><h2>Photos from memory cards</h2><p class="hint">When a card with a DCIM folder is plugged in.</p><div class="grid">
+    <div>${check("Offer to import", "import.enabled", true)}${check("Import without asking", "import.auto", false)}${check("Delete from the card after copying", "import.delete_after", false)}</div>
+    ${text("Photos go to", "import.photos", "", "{HOME}\\Pictures")}
+    ${text("Videos go to", "import.videos", "", "{HOME}\\Videos")}
+    ${text("Subfolders", "import.pattern", "{year} {month} {day}", "{year}\\{year}-{month}")}
+  </div></div>
+  <div class="card"><h2>Learning and groups</h2><div class="grid">
+    ${num("Corrections needed before proposing a rule", "learn.min_examples", "", 2)}
+    ${num("Files needed to propose a group (to-sort pile)", "groups.min_files", "", 2)}
+  </div></div>`;
+  bind(el);
+  $("#remind").addEventListener("input", e => { const v = e.target.value.split(",").map(x => parseInt(x)).filter(x => x >= 0); set("deadlines.remind_days", v.length ? v : undefined); });
+}
+function renderAll() {
+  renderGeneral(); renderAI(); renderRules(); renderFolders(); renderExtras();
+  $("#raw").value = JSON.stringify(R, null, 2);
+}
+
+/* ---------- messages, check, save ---------- */
+function show(kind, title, items = []) {
+  $("#msgs").innerHTML = `<div class="msg ${kind}"><b>${esc(title)}</b>${items.length ? `<ul>${items.map(i => `<li>${esc(i)}</li>`).join("")}</ul>` : ""}</div>`;
+}
+async function doCheck() {
+  const {data} = await api("/api/check", R);
+  if (data.errors.length) show("err", "Fix these before saving:", data.errors);
+  else if (data.warnings.length) show("warn", "All valid. Worth a look:", data.warnings);
+  else show("ok", "All valid.");
+  return data;
+}
+async function doSave() {
+  const {status, data} = await api("/api/save", R);
+  if (status !== 200) { show("err", "Not saved. Fix these:", data.errors || [data.error]); return; }
+  dirty = false; $("#save").disabled = true; $("#status").className = ""; $("#status").textContent = "Saved. DeskTidy applies it at the next pass.";
+  if (data.warnings.length) show("warn", "Saved (previous version kept as rules.json.bak). Worth a look:", data.warnings);
+  else show("ok", "Saved. The previous version is kept as rules.json.bak.");
+}
+document.querySelectorAll("#tabs button").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll("#tabs button, main section").forEach(x => x.classList.remove("on"));
+  b.classList.add("on"); $("#" + b.dataset.tab).classList.add("on");
+  if (b.dataset.tab === "json") $("#raw").value = JSON.stringify(R, null, 2);
+}));
+$("#applyRaw").onclick = () => {
+  try { R = JSON.parse($("#raw").value); touch(); renderAll(); show("ok", "JSON applied. Press Save to keep it."); }
+  catch (e) { show("err", "Not valid JSON: " + e.message); }
+};
+$("#check").onclick = doCheck;
+$("#save").onclick = doSave;
+$("#close").onclick = async () => {
+  if (dirty && !confirm("Close without saving the changes?")) return;
+  await api("/api/close", {}); document.body.innerHTML = '<div class="empty" style="margin-top:20vh">The editor is closed. You can close this tab.</div>';
+};
+window.addEventListener("beforeunload", e => { if (dirty) { e.preventDefault(); e.returnValue = ""; } });
+(async () => {
+  const {status, data} = await api("/api/state");
+  if (status !== 200) { show("err", "This page has expired: run desktidy editor again."); return; }
+  S = data; R = structuredClone(data.rules);
+  $("#ver").textContent = "v" + data.version; $("#file").textContent = data.file;
+  $("#status").textContent = "No changes"; renderAll();
+})();
+</script>
+</body>
+</html>

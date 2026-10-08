@@ -125,14 +125,39 @@ def move(src: str, folder: str, name: str, is_dir: bool) -> tuple[str, str]:
     return "MOVED", dst
 
 
-def record(action: str, src: str, dst: str, reason: str) -> None:
+_record_lock = threading.Lock()
+FOLLOWED = {"MOVED", "UNDONE", "ARCHIVED", "ARCHIVED_ZIP", "RECYCLED", "RENAMED"}
+
+
+def move_id(m: dict) -> str:
+    """A short stable id of a moves.csv row (used by the notification buttons and `desktidy undo <id>`)."""
+    key = f"{m['time']}|{m['action']}|{m['source']}|{m['destination']}"
+    return hashlib.blake2b(key.encode("utf-8"), digest_size=4).hexdigest()
+
+
+def record(action: str, src: str, dst: str, reason: str) -> str:
+    """Log one move (moves.csv) and keep the search index and the deadlines pointing at the file. Returns its id."""
+    row = {"time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "action": action, "source": src,
+           "destination": dst, "reason": reason}
     file = config.path("moves")
-    new = not os.path.exists(file)
-    with open(file, "a", newline="", encoding="utf-8-sig") as f:
-        w = csv.writer(f)
-        if new:
-            w.writerow(["time", "action", "source", "destination", "reason"])
-        w.writerow([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), action, src, dst, reason])
+    with _record_lock:
+        new = not os.path.exists(file)
+        with open(file, "a", newline="", encoding="utf-8-sig") as f:
+            w = csv.writer(f)
+            if new:
+                w.writerow(list(row))
+            w.writerow(list(row.values()))
+    if action in FOLLOWED:
+        from . import deadlines, index
+        try:
+            if action in ("RECYCLED", "ARCHIVED_ZIP"):
+                index.remove(src)
+            else:
+                index.moved(src, dst)
+            deadlines.moved(src, dst)
+        except Exception as ex:  # the log line is what matters; a busy index must not lose the move
+            log.info(f"ERROR updating the index for {dst}: {ex!r}")
+    return move_id(row)
 
 
 def read_moves() -> list[dict]:
@@ -141,6 +166,23 @@ def read_moves() -> list[dict]:
             return [r for r in csv.DictReader(f) if r.get("time")]
     except OSError:
         return []
+
+
+_today_count: dict = {"stamp": None, "value": 0}
+
+
+def tidied_today() -> int:
+    """Files tidied today (moves.csv), counted again only when the log changes."""
+    try:
+        st = os.stat(config.path("moves"))
+    except OSError:
+        return 0
+    stamp = (st.st_mtime_ns, st.st_size, date.today())
+    if _today_count["stamp"] != stamp:
+        today = date.today().isoformat()
+        value = sum(1 for m in read_moves() if m["time"].startswith(today) and m["action"] in ("MOVED", "DUPLICATE_TRASHED"))
+        _today_count.update(stamp=stamp, value=value)
+    return _today_count["value"]
 
 
 # ---------------------------------------------------------------- the service
@@ -154,6 +196,12 @@ class Service:
         self.setup_warned: str | None = None
         self.ai_hold: dict[str, float] = {}     # files gathered for one AI request: when first ready
         self.advising = False                   # organisation advice being prepared in the background
+        self.ids: list[str] = []                # moves of the current pass (notification buttons)
+        self.last_run: dict[str, float] = {}    # housekeeping: when each periodic task last ran
+        self.busy: set[str] = set()             # housekeeping tasks running in the background
+        self.cards: set[str] = set()            # memory cards already seen (serial numbers)
+        self.limit_said: str | None = None
+        self.tray = None
         self.state = {"pid": os.getpid(), "version": __version__,
                       "started": datetime.now().isoformat(timespec="seconds"),
                       "date": date.today().isoformat(), "moved_today": 0}
@@ -228,9 +276,11 @@ class Service:
                 self.setup_warned = missing
                 log.info(f"waiting for the setup ({missing}): run  desktidy setup")
             return []
+        self.ids = []
         done = [] if self.opts.dry_run else self.finish_jobs(cfg)
         pending = self.pending_paths()
         pinned = folders.active_pinned()
+        room = self.room_today(cfg, len(pending))
         for_ai = []
         for watched in cfg["watched_folders"]:
             base = cfg.expand(watched["path"])
@@ -239,6 +289,8 @@ class Service:
             except OSError:
                 continue
             for e in entries:
+                if room is not None and room <= 0:
+                    break  # daily limit reached: the rest waits for tomorrow
                 try:
                     if self.ignored(e, watched):
                         continue
@@ -254,17 +306,35 @@ class Service:
                     an = ct.analyze(e.path, is_dir, cfg)
                     d = classifier.decide(e.path, is_dir, cfg, an)
                     plan = naming.plan(an, cfg)
+                    if room is not None:
+                        room -= 1
                     if classifier.wants_ai(d, an, cfg, self.opts.no_ai):
                         for_ai.append((e.path, is_dir, base, an, d, plan))
                         continue
                     done += self.finish(cfg, e.path, is_dir, base, d.dest, d.reason,
-                                        plan.new_stem or plan.fallback, plan.reason)
+                                        plan.new_stem or plan.fallback, plan.reason, an=an)
                 except Exception as ex:
                     self.error(e.path, ex)
         ripe = self.gathered(for_ai, cfg)
         if ripe:
             done += self.dispatch(ripe, cfg)
         return done
+
+    def room_today(self, cfg: config.Config, pending: int = 0) -> int | None:
+        """How many more items may be tidied today (limits.files_per_day), None = no limit. Files waiting for an
+        AI answer already count."""
+        limit = config.tidy_limit(cfg)
+        if limit is None or self.opts.dry_run:
+            return None
+        room = limit - tidied_today() - pending
+        today = date.today().isoformat()
+        if room <= 0 and self.limit_said != today:
+            self.limit_said = today
+            log.info(f"daily limit reached ({limit} files): the rest waits for tomorrow (desktidy limit)")
+            if not self.opts.once:
+                winapi.notify(f"{APP_NAME}: daily limit reached", f"{limit} files tidied today. The others wait for "
+                              "tomorrow. Change it: desktidy limit", [("Settings", "desktidy:status")])
+        return max(0, room)
 
     def gathered(self, for_ai: list[tuple], cfg: config.Config) -> list[tuple]:
         """Files for the AI wait a little (ai.gather_seconds, 90 by default) so that several share one request:
@@ -285,8 +355,10 @@ class Service:
         return []
 
     def finish(self, cfg: config.Config, path: str, is_dir: bool, base: str, dest: str | None, reason: str,
-               new_stem: str | None, rename_reason: str) -> list[str]:
-        """Move (and maybe rename) one item; returns the line for the notification."""
+               new_stem: str | None, rename_reason: str, an: ct.Analysis | None = None, summary: str = "",
+               due: str = "") -> list[str]:
+        """Move (and maybe rename) one item; returns the line for the notification. Then the file is added to the
+        search index, its deadlines are noted and older versions next to it are pointed out."""
         if not dest:
             dest = cfg.default_destination
             if reason in ("", "no rule matched"):
@@ -303,13 +375,36 @@ class Service:
             self.opts.say(f"{original}  ->  {config.short(dest)}\\{name}   ({why})")
             return []
         action, final = move(path, dest, name, is_dir)
-        record(action, path, final, why)
+        self.ids.append(record(action, path, final, why))
         log.info(f"{action}: {path} -> {final} ({why})")
         self.state["moved_today"] += 1
         self.errors.pop(path, None)
         if action == "DUPLICATE_TRASHED":
             return [f"{original}: duplicate of {os.path.basename(final)}, sent to the Recycle Bin"]
+        if not is_dir:
+            self.after_move(cfg, final, an, summary, due)
         return [f"{original} -> {config.short(os.path.dirname(final))}" + (f" as {name}" if renamed else "")]
+
+    def after_move(self, cfg: config.Config, final: str, an: ct.Analysis | None, summary: str, due: str) -> None:
+        """Index the file, note its deadlines, point out older versions. Never blocks the move itself."""
+        from . import deadlines, index, versions
+        try:
+            if an is None:  # an AI answer collected after a restart: read the file again, without OCR
+                an = ct.analyze(final, False, {"analysis": {"ocr": False}})
+            title = naming.title(an) or ""
+            if cfg.get("search", {}).get("enabled", True) and os.path.splitext(final)[1].lower() in index.INDEXABLE | \
+                    (ct.IMAGE_EXT if an.info.get("ocr") else set()):
+                index.add(final, an, summary, title)
+            if cfg.get("deadlines", {}).get("enabled", True):
+                for d in deadlines.add_for_file(final, an, title, due):
+                    log.info(f"DEADLINE {d['date']}: {d['what']}" + (f" ({d['amount']})" if d.get("amount") else ""))
+            family = versions.family_of(final)
+            if family and not self.opts.once:
+                winapi.notify(f"{APP_NAME}: older versions of {os.path.basename(final)}",
+                              f"{len(family.older)} older version(s) in {config.short(family.folder)}. "
+                              "Move them aside: desktidy versions", [("Show", "desktidy:versions")])
+        except Exception as ex:
+            log.info(f"ERROR after moving {final}: {ex!r}")
 
     # ------------------------------------------------ the AI
     def dispatch(self, items: list[tuple], cfg: config.Config) -> list[str]:
@@ -359,7 +454,8 @@ class Service:
             rename_reason = "the AI found the name didn't match the content"
         else:
             rename_reason = item.rename_reason + ("; name suggested by AI" if ai_name else "")
-        return self.finish(cfg, item.path, item.is_dir, item.base, dest, reason, new_stem, rename_reason)
+        return self.finish(cfg, item.path, item.is_dir, item.base, dest, reason, new_stem, rename_reason,
+                           an=item.analysis, summary=answer.summary if answer else "", due=answer.due if answer else "")
 
     @staticmethod
     def pending_paths() -> set[str]:
@@ -448,12 +544,109 @@ class Service:
                 if result and result["tips"]:
                     n = len(result["tips"])
                     winapi.notify(f"{APP_NAME}: {n} idea{'s' if n > 1 else ''} to organise your files",
-                                  "\n".join(t["title"] for t in result["tips"][:3]) + "\nSee them: desktidy advice")
+                                  "\n".join(t["title"] for t in result["tips"][:3]),
+                                  [("See them", "desktidy:advice")], "desktidy:advice")
             except Exception as ex:
                 log.info(f"ERROR preparing the organisation advice: {ex!r}")
             finally:
                 self.advising = False
         threading.Thread(target=work, daemon=True).start()
+
+    # ------------------------------------------------ housekeeping
+    def due(self, name: str, seconds: float) -> bool:
+        if time.time() - self.last_run.get(name, 0) < seconds:
+            return False
+        self.last_run[name] = time.time()
+        return True
+
+    def background(self, name: str, work) -> None:
+        """Run `work` on its own thread, unless the same task is still running."""
+        if name in self.busy:
+            return
+        self.busy.add(name)
+
+        def wrapper():
+            try:
+                work()
+            except Exception as ex:
+                log.info(f"ERROR in {name}: {ex!r}")
+            finally:
+                self.busy.discard(name)
+        threading.Thread(target=wrapper, name=name, daemon=True).start()
+
+    def housekeeping(self, cfg: config.Config) -> None:
+        """The periodic jobs: deadline reminders, new memory cards, learning from corrections, the search index,
+        the archive and the update check. Each at its own pace; the slow ones in the background."""
+        from . import archive, deadlines, importer, index, learn, updates
+        if self.opts.dry_run or self.opts.once:
+            return
+        if self.due("deadlines", 600):
+            for d in deadlines.remind(cfg, winapi.notify):
+                log.info(f"REMINDER: {d['what']} due {d['date']}")
+        if importer.settings(cfg)["enabled"]:
+            self.check_cards(cfg)
+        if self.due("learn", 1800):
+            def learn_work():
+                for p in learn.scan(cfg):
+                    rule = p["rule"]
+                    log.info(f"LEARNED: a rule for {rule['destination']} from {len(p['examples'])} corrections")
+                    winapi.notify(f"{APP_NAME} learned from your corrections",
+                                  f"Files like {', '.join(p['examples'][:2])} go to {os.path.basename(rule['destination'])}."
+                                  " Add the rule?", [("Review", "desktidy:learn")])
+            self.background("learn", learn_work)
+        if self.due("index", 86400) and cfg.get("search", {}).get("enabled", True):
+            self.background("index", lambda: log.info(f"search index: {index.refresh(cfg)}"))
+        if self.due("archive", 86400) and archive.settings(cfg)["enabled"]:
+            def archive_work():
+                lines = archive.run(cfg, log.info)
+                if lines:
+                    winapi.notify(f"{APP_NAME}: {len(lines)} old item(s) archived", "\n".join(lines[:3]),
+                                  [("Show", "desktidy:where")])
+            self.background("archive", archive_work)
+        if self.due("updates", 3600) and updates.due(cfg):
+            self.background("updates", lambda: updates.check(winapi.notify))
+
+    def check_cards(self, cfg: config.Config) -> None:
+        """A memory card with photos was plugged in: offer to import the new ones (or import them, if auto)."""
+        from . import importer
+        present = importer.cards(cfg)
+        for card in present:
+            if card["serial"] in self.cards:
+                continue
+            self.cards.add(card["serial"])
+            label = card["label"] or "memory card"
+
+            def work(card=card, label=label):  # reading the dates of many photos takes a while
+                new = importer.new_media(card["root"], cfg)
+                if not new:
+                    return
+                if importer.settings(cfg)["auto"]:
+                    s = importer.run(card["root"], cfg)
+                    log.info(f"IMPORTED {s['copied']} photos/videos from {label}")
+                    winapi.notify(f"{APP_NAME}: {s['copied']} photos/videos imported from {label}",
+                                  ", ".join(config.short(f) for f in s["folders"][:3]))
+                else:
+                    winapi.notify(f"{len(new)} new photos/videos on {label} ({card['letter']}:)",
+                                  "Import them into Pictures, sorted by date?",
+                                  [("Import", f"desktidy:import?drive={card['letter']}"), ("Not now", "desktidy:status")])
+            self.background(f"card-{card['serial']}", work)
+        self.cards &= {c["serial"] for c in present}  # a card taken out is offered again when it comes back
+
+    def notify_moves(self, lines: list[str]) -> None:
+        """One notification for the pass, with Open and Undo buttons."""
+        ids = self.ids[-20:]
+        if len(lines) == 1 and ids:
+            buttons = [("Open", f"desktidy:open?id={ids[-1]}"), ("Undo", f"desktidy:undo?ids={ids[-1]}")]
+        else:
+            buttons = [("Show", "desktidy:where")] + ([("Undo all", f"desktidy:undo?ids={','.join(ids)}")] if ids else [])
+        winapi.notify(f"{APP_NAME}: {len(lines)} item{'s' if len(lines) > 1 else ''} tidied",
+                      "\n".join(lines[:4]) + ("\n..." if len(lines) > 4 else ""), buttons, "desktidy:where")
+
+    def tooltip(self, paused: bool) -> str:
+        from . import deadlines
+        soon = [d for d in deadlines.upcoming(past_days=0) if deadlines.days_left(d) <= 7]
+        state = "paused" if paused else f"{tidied_today()} tidied today"
+        return f"{APP_NAME} · {state}" + (f" · {len(soon)} deadline(s) this week" if soon else "")
 
     # ------------------------------------------------ bookkeeping
     def error(self, path: str, ex: Exception) -> None:
@@ -493,6 +686,12 @@ class Service:
             except OSError:
                 pass
             threading.Thread(target=self._answer_questions, daemon=True).start()
+            try:
+                if config.load_config(self.opts.config_file).get("tray", True):
+                    from . import tray
+                    self.tray = tray.start()
+            except Exception as ex:
+                log.info(f"tray icon not available: {ex!r}")
         log.info(f"start v{__version__}" + (" (dry run)" if self.opts.dry_run else ""))
         while True:
             interval = 30
@@ -503,10 +702,12 @@ class Service:
                 if not paused:
                     lines = self.tick(cfg)
                     if lines and not self.opts.dry_run:
-                        winapi.notify(f"{APP_NAME}: {len(lines)} item{'s' if len(lines) > 1 else ''} tidied",
-                                      "\n".join(lines[:4]) + ("\n..." if len(lines) > 4 else ""))
+                        self.notify_moves(lines)
                     self.suggest_pins(cfg)
                     self.maybe_advise(cfg)
+                self.housekeeping(cfg)
+                if self.tray:
+                    self.tray.update(self.tooltip(paused))
                 self.save_state(last_pass=datetime.now().isoformat(timespec="seconds"), paused=paused,
                                 ai_pending=len(self.pending_paths()) + len(self.ai_hold))
             except Exception as ex:
@@ -516,6 +717,8 @@ class Service:
                 return
             if not self.wait(interval):
                 log.info("stop requested (desktidy stop)")
+                if self.tray:
+                    self.tray.stop()
                 try:
                     os.remove(config.path("stop"))
                 except OSError:

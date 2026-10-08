@@ -12,7 +12,8 @@ license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "Di Filippo Davide" }]
 keywords = ["file-organizer", "downloads", "desktop", "automation", "windows", "ocr", "claude", "gemini", "groq",
-            "ollama", "openai", "productivity", "declutter", "file-management"]
+            "ollama", "openai", "productivity", "declutter", "file-management", "full-text-search", "deadlines",
+            "photo-import", "system-tray"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Environment :: Console",
@@ -43,12 +44,13 @@ desktidy = "desktidy.cli:main"
 
 [project.gui-scripts]
 desktidy-service = "desktidy.service:main"
+desktidyw = "desktidy.gui:main"
 
 [tool.setuptools]
 packages = ["desktidy"]
 
 [tool.setuptools.package-data]
-desktidy = ["default_rules.json", "ocr.ps1"]
+desktidy = ["default_rules.json", "ocr.ps1", "icon.ico", "editor.html"]
 
 [tool.setuptools.dynamic]
 version = { attr = "desktidy.__version__" }

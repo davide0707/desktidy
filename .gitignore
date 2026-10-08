@@ -21,3 +21,11 @@ PAUSE
 STOP
 .env
 *.key
+advice.json
+folder_ops.json
+deadlines.json
+learned.json
+imports.json
+updates.json
+index.db
+index.db-*

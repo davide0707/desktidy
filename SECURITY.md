@@ -18,3 +18,11 @@ You will get an answer within a week.
   and two file names per folder (none from folders of `private` rules), never the content of a file.
 - Text inside files is treated as data: the AI is instructed to ignore any instruction written in a file, and its
   answer can only pick a folder from the list DeskTidy sent.
+- The search index (`index.db`), deadlines and learned rules are local files in the data folder; nothing is uploaded.
+- The `desktidy:` link (notification buttons, Explorer menu) accepts only a fixed list of actions; ids are checked
+  against DeskTidy's own records and a drive must be a single letter, so a web page can't make DeskTidy open, move or
+  delete an arbitrary path. The Explorer menu and the link are registered for the current user only (HKCU).
+- `desktidy editor` listens on 127.0.0.1 only, while the command runs: the page needs a random token in its address,
+  every API call must carry it in a header, and requests whose Host is not 127.0.0.1/localhost are refused.
+- Once a week DeskTidy asks GitHub for the latest release number (anonymous, no data about you); turn it off with
+  `"updates": {"check": false}`.

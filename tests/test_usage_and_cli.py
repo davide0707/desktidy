@@ -64,6 +64,16 @@ class TestSpend(IsolatedTest):
 
 
 class TestConfig(IsolatedTest):
+    def test_builtin_variables_and_safe_folders(self):
+        cfg = config.Config({"variables": {"DOC": "C:\\mine"}})
+        self.assertTrue(cfg.expand("{DOCS}\\Archive").startswith(self.tmp))   # tests never reach real folders
+        self.assertEqual(config.Config({"variables": {"DOCS": "D:\\docs"}}).expand("{DOCS}\\x"), "D:\\docs\\x")
+        with self.assertRaises(OSError):
+            cfg.folder("{NOPE}\\Archive")
+        with self.assertRaises(OSError):
+            cfg.folder("relative\\path")
+        self.assertEqual(cfg.folder("{DOC}\\x"), "C:\\mine\\x")
+
     def test_nested_variables(self):
         p = self.path("_data", "r.json")
         with open(p, "w", encoding="utf-8") as f:

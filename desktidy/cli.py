@@ -8,18 +8,22 @@
 from __future__ import annotations
 
 import getpass
+import io
 import os
 import re
 import shutil
 import subprocess
 import sys
 import time
+from contextlib import redirect_stdout
 from datetime import date, datetime, timedelta
 
 from . import APP_NAME, REPO_URL, __author__, __version__, config, folders, usage, winapi
-from .service import paused_until, read_moves, record
+from .service import move_id, paused_until, read_moves, record, tidied_today
 
 INTERACTIVE = False  # True inside the console: commands ask for what is missing
+GUI = False          # True when started without a console (Explorer menu, notification buttons, tray)
+UNDOABLE = ("MOVED", "ARCHIVED", "ARCHIVED_ZIP")
 
 
 # ================================================================ look and feel
@@ -287,6 +291,9 @@ def cmd_setup(args):
         ok(f"Pinned {C.BOLD}{os.path.basename(target)}{C.X}  {C.GR}{config.short(target)}{C.X}")
     ok(f"{C.BOLD}Setup complete{C.X}: DeskTidy starts tidying at its next pass (within 30 seconds)")
     can_ask = (INTERACTIVE or sys.stdin.isatty()) and "--accept" not in args
+    if can_ask and "limits" not in cfg:
+        answer = ask("At most how many files a day should DeskTidy tidy? (a number, Enter = unlimited):")
+        cmd_limit([answer or "unlimited"])
     if can_ask and confirm("Use an AI for the files DeskTidy can't place by itself? (free options available)"):
         title("Choose the AI service")
         ids = provider_table(cfg)
@@ -332,7 +339,7 @@ def cmd_status(args):
     from . import providers
     mode, p = config.ai_mode(cfg), providers.current(cfg)
     row("AI", f"{C.CY}{mode}{C.X} - {config.AI_MODES[mode][0]}" + (
-        "" if mode == "off" else f" {C.GR}(max {config.daily_limit(cfg)}/day){C.X}"))
+        "" if mode == "off" else f" {C.GR}(files a day: {config.limit_text(config.daily_limit(cfg))}){C.X}"))
     if mode != "off":
         row("AI service", f"{p.name} · {config.ai_model(cfg)} · {config.ai_delivery(cfg)}"
                           + (f" · {C.G}free{C.X}" if p.free else ""))
@@ -365,7 +372,19 @@ def cmd_status(args):
                                               if pinned else "  (desktidy pinned)"))
     moves = read_moves()
     today = [m for m in moves if m["time"].startswith(date.today().isoformat())]
-    row("Tidied today", str(len(today)))
+    limit = config.tidy_limit(cfg)
+    row("Tidied today", f"{len(today)}" + (f" of {limit} (daily limit: desktidy limit)" if limit is not None
+                                           else f"  {C.GR}(no daily limit){C.X}"))
+    from . import deadlines, index, learn
+    soon = deadlines.upcoming(past_days=3)[:3]
+    if soon:
+        row("Deadlines", " · ".join(f"{d['what'][:28]} {deadlines.when_text(d)}" for d in soon)
+            + f"  {C.GR}(desktidy deadlines){C.X}", f"{C.Y}[!]{C.X}" if deadlines.days_left(soon[0]) <= 1 else None)
+    proposals = learn.load()["proposals"]
+    if proposals:
+        row("Learned", f"{len(proposals)} rule(s) from your corrections to review -> {C.W}desktidy learn{C.X}")
+    stats = index.stats()
+    row("Search index", f"{stats['files']} files ({stats['bytes'] / 1e6:.1f} MB)  {C.GR}(desktidy find <words>){C.X}")
     if state.get("last_error"):
         row("Last error", f"{C.R}{state['last_error']}{C.X}  (desktidy log errors)", f"{C.R}[-]{C.X}")
     if moves:
@@ -497,25 +516,34 @@ def cmd_autostart(args):
 
 # ================================================================ commands: files
 def print_move(m: dict, number: int | None = None) -> None:
+    from . import index, ops
     name = os.path.basename(m["source"])
     when = f"{m['time'][8:10]}/{m['time'][5:7]} {m['time'][11:16]}"
     n = f"{C.W}{number:>3}{C.X} " if number is not None else "    "
+    about = ""
     if m["action"] == "DUPLICATE_TRASHED":
         where = f"{C.Y}Recycle Bin{C.X} (duplicate of {config.short(m['destination'])})"
     elif m["action"] == "UNDONE":
         where = f"{C.CY}restored{C.X} to {config.short(m['destination'])}"
+    elif m["action"] == "RECYCLED":
+        where = f"{C.Y}Recycle Bin{C.X}"
     else:
-        where = f"{C.G}{config.short(os.path.dirname(m['destination']))}{C.X}"
-        if os.path.basename(m["destination"]) != config.clean_name(name):
-            where += f"\\{C.BOLD}{os.path.basename(m['destination'])}{C.X}"
-    print(f"  {n}{C.GR}{when}{C.X}  {C.BOLD}{name}{C.X}\n        -> {where}\n        {C.GR}why: {m['reason']}{C.X}")
+        dest = ops.current_path(m["destination"])
+        label = {"ARCHIVED": "archived in ", "ARCHIVED_ZIP": "archived (zip) in "}.get(m["action"], "")
+        where = f"{label}{C.G}{config.short(os.path.dirname(dest))}{C.X}"
+        if os.path.basename(dest) != config.clean_name(name):
+            where += f"\\{C.BOLD}{os.path.basename(dest)}{C.X}"
+        about = index.summary_of(dest)
+    print(f"  {n}{C.GR}{when}{C.X}  {C.BOLD}{name}{C.X}  {C.GR}#{move_id(m)}{C.X}\n        -> {where}"
+          + (f"\n        {C.CY}about: {about}{C.X}" if about else "") + f"\n        {C.GR}why: {m['reason']}{C.X}")
 
 
 def _norm(s: str) -> str:
     return re.sub(r"[^a-z0-9]", "", config.strip_accents(s).lower())  # "Report 1" == "report_1"
 
 
-def find_moves(text: str, actions=("MOVED", "DUPLICATE_TRASHED", "UNDONE")) -> list[dict]:
+def find_moves(text: str, actions=("MOVED", "DUPLICATE_TRASHED", "UNDONE", "ARCHIVED", "ARCHIVED_ZIP",
+                                   "RECYCLED")) -> list[dict]:
     moves = [m for m in read_moves() if m["action"] in actions]
     if text:
         q = _norm(text)
@@ -536,22 +564,72 @@ def cmd_where(args):
     if not found:
         warn(f"Nothing called '{text}' in the log. Try a shorter part of the name." if text else "Nothing moved yet")
         return
+    from .ops import current_path
     for i, m in enumerate(found, 1):
         print_move(m, i)
     if "--open" in args:
-        winapi.reveal(found[0]["destination"])
+        winapi.reveal(current_path(found[0]["destination"]))
     elif INTERACTIVE:
         n = ask("Number to show in Explorer (Enter = none):")
         if n.isdigit() and 1 <= int(n) <= len(found):
-            winapi.reveal(found[int(n) - 1]["destination"])
+            winapi.reveal(current_path(found[int(n) - 1]["destination"]))
     else:
         hint(f"\n  Show the first in Explorer: desktidy where {text or '<name>'} --open"
              "   ·   whole log: desktidy where --all")
 
 
+def undo_move(m: dict) -> str:
+    """Put one logged move (or archived item) back where it was, with its old name. Returns the restored path."""
+    from . import archive
+    from .ops import current_path
+    src, dst = m["source"], current_path(m["destination"])
+    if not os.path.exists(dst):
+        raise FileNotFoundError(f"{os.path.basename(dst)} is no longer in {config.short(os.path.dirname(dst))}")
+    target = src if not os.path.exists(src) else os.path.join(os.path.dirname(src), "restored_" + os.path.basename(src))
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    if m["action"] == "ARCHIVED_ZIP":
+        target = archive.restore(dst, src)
+    else:
+        shutil.move(dst, target)
+    record("UNDONE", dst, target, "restored by desktidy undo")
+    st = os.stat(target)
+    kept = config.read_json(config.path("kept"), []) or []
+    kept.append({"path": target, "size": st.st_size, "mtime": st.st_mtime})
+    config.write_json(config.path("kept"), kept[-500:])
+    return target
+
+
+def undo_ids(ids: list[str]) -> tuple[list[str], list[str]]:
+    """(restored paths, problems) for moves given by their #id (notification buttons, `desktidy undo 1a2b3c4d`)."""
+    wanted = {i.lower() for i in ids}
+    rows = [m for m in read_moves() if m["action"] in UNDOABLE and move_id(m) in wanted]
+    restored, problems = [], []
+    for m in rows:
+        try:
+            restored.append(undo_move(m))
+        except OSError as ex:
+            problems.append(str(ex))
+    if len(rows) < len(wanted):
+        problems.append(f"{len(wanted) - len(rows)} move(s) not found")
+    return restored, problems
+
+
 def cmd_undo(args):
+    from .ops import current_path
     text = " ".join(args)
-    candidates = [m for m in find_moves("", ("MOVED",)) if os.path.exists(m["destination"])]
+    ids = re.findall(r"#?([0-9a-f]{8})\b", text.lower())
+    if ids and re.fullmatch(r"[#0-9a-f,\s]+", text.lower()):
+        restored, problems = undo_ids(ids)
+        for p in restored:
+            ok(f"Restored {C.BOLD}{os.path.basename(p)}{C.X} to {config.short(os.path.dirname(p))}")
+        for p in problems:
+            fail(p)
+        if GUI and restored:
+            names = "\n".join(os.path.basename(p) for p in restored[:4])
+            winapi.notify(f"{APP_NAME}: {len(restored)} item(s) put back",
+                          names + "\nDeskTidy leaves them there until you change them.")
+        return
+    candidates = [m for m in find_moves("", UNDOABLE) if os.path.exists(current_path(m["destination"]))]
     if not candidates:
         info("Nothing to undo")
         return
@@ -575,16 +653,7 @@ def cmd_undo(args):
         if text:
             fail(f"No move matching '{text}' can be undone")
         return
-    src, dst = choice["source"], choice["destination"]
-    target = src if not os.path.exists(src) else os.path.join(os.path.dirname(src),
-                                                               "restored_" + os.path.basename(src))
-    os.makedirs(os.path.dirname(target), exist_ok=True)
-    shutil.move(dst, target)
-    record("UNDONE", dst, target, "restored by desktidy undo")
-    st = os.stat(target)
-    kept = config.read_json(config.path("kept"), []) or []
-    kept.append({"path": target, "size": st.st_size, "mtime": st.st_mtime})
-    config.write_json(config.path("kept"), kept[-500:])
+    target = undo_move(choice)
     ok(f"Restored {C.BOLD}{os.path.basename(target)}{C.X} to {config.short(os.path.dirname(target))}")
     info("DeskTidy will leave it there until you change it")
 
@@ -863,7 +932,8 @@ def cmd_spend(args):
         cost = f"${price[0]:g} in / ${price[1]:g} out per million tokens" + ("; batch = half" if p.batch else "")
     row("Model", f"{p.name} · {model}  {C.GR}({cost}{C.GR}){C.X}")
     today = date.today()
-    row("Today", f"{usd(u['today_usd'])}   {u['today_files']} files   {C.GR}(limit {config.daily_limit(cfg)}/day){C.X}")
+    row("Today", f"{usd(u['today_usd'])}   {u['today_files']} files   "
+                 f"{C.GR}(limit {config.limit_text(config.daily_limit(cfg))}){C.X}")
     f7, s7 = usage.between(u, (today - timedelta(days=6)).isoformat())
     row("Last 7 days", f"{usd(s7)}   {f7} files")
     fm, sm = usage.between(u, today.replace(day=1).isoformat())
@@ -985,14 +1055,19 @@ def cmd_ai(args):
                 choose_provider(ids[int(choice) - 1] if choice.isdigit() and 1 <= int(choice) <= len(ids) else choice)
         return
     if sub == "max":
+        limit = config.parse_limit(value)
         if value == "auto":
             config.update_config(lambda d: d["ai"].pop("max_files_per_day", None))
-            ok(f"Daily limit: the mode's default ({config.AI_MODES[current][1]} files)")
-        elif value.isdigit():
-            config.update_config(lambda d: d["ai"].__setitem__("max_files_per_day", int(value)))
-            ok(f"The AI will look at {value} files a day at most")
+            ok(f"AI daily limit: the mode's default ({config.AI_MODES[current][1]} files)")
+        elif limit == config.UNLIMITED:
+            config.update_config(lambda d: d["ai"].__setitem__("max_files_per_day", config.UNLIMITED))
+            ok("The AI may look at any number of files a day (no limit)")
+            hint("  The budget still applies: desktidy spend budget <usd>")
+        elif isinstance(limit, int):
+            config.update_config(lambda d: d["ai"].__setitem__("max_files_per_day", limit))
+            ok(f"The AI will look at {limit} files a day at most")
         else:
-            fail("Examples:  desktidy ai max 20   ·   desktidy ai max auto")
+            fail("Examples:  desktidy ai max 50   ·   desktidy ai max unlimited   ·   desktidy ai max auto")
         return
     if sub == "model":
         if not raw:
@@ -1033,7 +1108,8 @@ def cmd_ai(args):
             print(f"   {mark} {C.W}{i}){C.X} {C.BOLD}{mode:<9}{C.X} {text}{per_day}")
         hint(f"\n  Service {p.id} · model {config.ai_model(cfg)} · delivery {config.ai_delivery(cfg)} · "
              f"min confidence {cfg.ai.get('min_confidence', 'high')}\n"
-             "  More: desktidy ai provider (Claude, OpenAI, Gemini, Groq, Mistral, OpenRouter, Ollama)  ·  ai max <n>\n"
+             "  More: desktidy ai provider (Claude, OpenAI, Gemini, Groq, Mistral, OpenRouter, Ollama)\n"
+             "        ai max <n|unlimited>\n"
              "        ai model <name>  ·  ai delivery batch|instant  ·  ai confidence high|medium")
         if not INTERACTIVE:
             return
@@ -1116,12 +1192,16 @@ def _test_key(key: str | None, cfg) -> bool | None:
 
 
 def print_tips(data: dict) -> None:
+    from .ops import AUTOMATIC
     for i, t in enumerate(data.get("tips", []), 1):
-        print(f"\n   {C.W}{i}){C.X} {C.CY}[{t['kind']}]{C.X} {C.BOLD}{t['title']}{C.X}")
+        auto = f"  {C.G}(advice apply {i}){C.X}" if t["kind"] in AUTOMATIC and t.get("paths") else ""
+        print(f"\n   {C.W}{i}){C.X} {C.CY}[{t['kind']}]{C.X} {C.BOLD}{t['title']}{C.X}{auto}")
         if t.get("detail"):
             print(f"      {t['detail']}")
         for p in t.get("paths", [])[:4]:
             print(f"      {C.GR}-> {config.short(p)}{C.X}")
+        if t.get("new_name"):
+            print(f"      {C.GR}new name: {t['new_name']}{C.X}")
 
 
 def cmd_advice(args):
@@ -1165,6 +1245,17 @@ def cmd_advice(args):
         folders.pin(tip["paths"][0])
         ok(f"Pinned {C.BOLD}{os.path.basename(tip['paths'][0])}{C.X}")
         return
+    elif sub == "apply":
+        return apply_tip(args[1] if len(args) > 1 else "", cfg, "--yes" in args)
+    elif sub == "undo":
+        from . import ops
+        entry = ops.undo_last(cfg)
+        if entry:
+            ok(f"Undone: {C.BOLD}{entry['title']}{C.X} ({len(entry['steps'])} step(s) reverted, rules and pinned "
+               "folders restored)")
+        else:
+            info("No applied tip to undo")
+        return
     else:
         data = advice.load()
     title("Organisation advice")
@@ -1184,11 +1275,589 @@ def cmd_advice(args):
         print(f"\n  {C.GR}Seen on this PC (offline, now):{C.X}")
         for f in findings:
             warn(f)
-    hint("\n  desktidy advice new · advice open <n> (Explorer) · advice pin <n> (pin its folder)")
+    hint("\n  desktidy advice new · advice apply <n> (do it, after a preview) · advice undo · advice open <n> "
+         "(Explorer) · advice pin <n>")
     if INTERACTIVE and data.get("tips"):
-        n = ask("Number to open in Explorer (Enter = back):")
+        n = ask("Number to open in Explorer, 'a' + number to apply it (Enter = back):").lower().replace(" ", "")
         if n.isdigit():
             cmd_advice(["open", n])
+        elif n.startswith("a") and n[1:].isdigit():
+            apply_tip(n[1:], cfg)
+
+
+def apply_tip(n: str, cfg, yes: bool = False) -> None:
+    """Show what a tip would do, then do it (undoable with: desktidy advice undo)."""
+    from . import advice, ops
+    tips = advice.load().get("tips", [])
+    if not (n.isdigit() and 1 <= int(n) <= len(tips)):
+        fail("Usage: desktidy advice apply <tip number>   (see: desktidy advice)")
+        return
+    tip = tips[int(n) - 1]
+    plan = ops.plan(tip, cfg)
+    title(f"Apply: {tip['title']}")
+    for p in plan.problems:
+        fail(p)
+    if not plan.ok:
+        hint("  Nothing was changed.")
+        return
+    moves = [s for s in plan.steps if s["op"] == "move"]
+    for step in plan.steps[:25]:
+        print(f"   {C.CY}·{C.X} {ops.describe(step)}")
+    if len(plan.steps) > 25:
+        print(f"   {C.GR}... and {len(plan.steps) - 25} more{C.X}")
+    hint(f"\n  {len(moves)} move(s). Files are never deleted; rules and pinned folders follow the folders.")
+    if not yes and not confirm("Do it?", default_yes=False):
+        return
+    try:
+        entry = ops.apply(plan, cfg, tip)
+    except Exception as ex:
+        fail(f"Stopped and rolled back: {ex}")
+        return
+    updated = f", {len(entry['changes'])} setting(s) updated" if entry["changes"] else ""
+    ok(f"Done: {len(entry['steps'])} step(s){updated}")
+    info(f"Changed your mind? {C.W}desktidy advice undo{C.X}")
+
+
+# ================================================================ commands: find and tidy up
+def _pick(prompt: str, count: int) -> int | None:
+    """A number between 1 and count typed by the user (only when someone can answer)."""
+    if not (INTERACTIVE or sys.stdin.isatty()) or not count:
+        return None
+    n = ask(prompt)
+    return int(n) if n.isdigit() and 1 <= int(n) <= count else None
+
+
+def cmd_find(args):
+    """Search by content: desktidy find electricity bill september."""
+    from . import index
+    if args and args[0].lower() in ("--rebuild", "rebuild", "--index", "index"):
+        cfg = config.load_config()
+        info("Indexing the documents in your folders (offline" + (", with OCR: slower" if "--ocr" in args else "")
+             + ")...")
+        count = [0]
+
+        def progress(_):
+            count[0] += 1
+            if count[0] % 25 == 0:
+                print(f"\r  {C.GR}{count[0]} files{C.X}", end="", flush=True)
+        result = index.refresh(cfg, limit=1_000_000, ocr="--ocr" in args, progress=progress)
+        print("\r", end="")
+        ok(f"{result['added']} added, {result['removed']} removed · {index.stats()['files']} files in the index")
+        return
+    text = " ".join(a for a in args if not a.startswith("--"))
+    if not text and (INTERACTIVE or sys.stdin.isatty()):
+        text = ask("What are you looking for? (words from the content, the title or the name):")
+    if not text:
+        fail("Usage: desktidy find <words>   e.g.  desktidy find electricity bill september")
+        return
+    hits = index.search(text, 15)
+    title(f"Files about '{text}'")
+    if not hits:
+        stats = index.stats()
+        warn(f"Nothing found among {stats['files']} indexed files.")
+        hint(f"  Fewer or other words? Existing files are indexed once a day, or now: {C.W}desktidy find --rebuild{C.X}")
+        return
+    for i, h in enumerate(hits, 1):
+        folder = config.short(os.path.dirname(h.path))
+        print(f"  {C.W}{i:>2}){C.X} {C.BOLD}{os.path.basename(h.path)}{C.X}  {C.GR}{folder}{C.X}")
+        if h.summary or h.title:
+            print(f"      {C.CY}{h.summary or h.title}{C.X}")
+        if h.snippet:
+            snippet = h.snippet.replace(index.MARK[0], C.Y or "*").replace(index.MARK[1], C.GR or "*")
+            print(f"      {C.GR}{snippet}{C.X}")
+    if "--open" in args:
+        os.startfile(hits[0].path)
+        return
+    n = _pick("Number to open (Enter = none):", len(hits))
+    if n:
+        os.startfile(hits[n - 1].path)
+
+
+def _parse_date(text: str):
+    from . import deadlines
+    for kind, rx in deadlines.DATES:
+        m = rx.fullmatch(config.strip_accents(text.strip()).lower())
+        if m:
+            return deadlines._make(kind, m, date.today())
+    return None
+
+
+def cmd_deadlines(args):
+    from . import deadlines
+    sub = args[0].lower() if args else ""
+    if sub in ("done", "paid", "remove", "delete", "open", "undone"):
+        key = args[1] if len(args) > 1 else ""
+        item = deadlines.find(key)
+        if not item:
+            fail(f"Usage: desktidy deadlines {sub} <number>   (see: desktidy deadlines)")
+            return
+        if sub in ("done", "paid"):
+            deadlines.update(item["id"], done=True)
+            ok(f"Done: {item['what']} (no more reminders)")
+        elif sub == "undone":
+            deadlines.update(item["id"], done=False, notified=[])
+            ok(f"Reminders back on for: {item['what']}")
+        elif sub == "open":
+            if item.get("path") and os.path.exists(item["path"]):
+                os.startfile(item["path"])
+            else:
+                fail("The file is no longer where it was")
+        else:
+            deadlines.remove(item["id"])
+            ok(f"Removed: {item['what']}")
+        return
+    if sub == "add":
+        when = _parse_date(args[1]) if len(args) > 1 else None
+        what = " ".join(args[2:]).strip()
+        if not when or not what:
+            fail('Usage: desktidy deadlines add 2026-10-30 Pay the rent   (also 30/10/2026 or "30 ottobre")')
+            return
+        item = deadlines.add(when, what)
+        (ok if item else info)(f"Added: {what} on {when:%a %d %b %Y}" if item else "Already listed")
+        return
+    if sub == "scan":
+        from . import content as ct
+        target = unquote(" ".join(args[1:]))
+        if not os.path.isfile(target):
+            fail("Usage: desktidy deadlines scan <file>")
+            return
+        an = ct.analyze(target, False, config.load_config())
+        from . import naming
+        added = deadlines.add_for_file(target, an, naming.title(an) or "")
+        for d in added:
+            ok(f"{d['date']}: {d['what']}" + (f" · {d['amount']}" if d.get("amount") else ""))
+        if not added:
+            info("No deadline found in this file (or already listed)")
+        return
+    items = deadlines.upcoming()
+    title("Deadlines")
+    if not items:
+        info("No upcoming deadlines. DeskTidy finds them in the documents it tidies (bills, enrolments, contracts).")
+        hint('  Add one by hand: desktidy deadlines add 2026-10-30 "Pay the rent"')
+        return
+    for i, d in enumerate(items, 1):
+        n = deadlines.days_left(d)
+        color = C.R if n < 0 else C.Y if n <= 3 else C.G
+        amount = f"  {C.BOLD}{d['amount']}{C.X}" if d.get("amount") else ""
+        print(f"  {C.W}{i:>2}){C.X} {color}{date.fromisoformat(d['date']):%a %d %b %Y}{C.X} {C.GR}({deadlines.when_text(d)})"
+              f"{C.X}  {d['what']}{amount}")
+        if d.get("path"):
+            print(f"      {C.GR}{config.short(d['path'])}{C.X}")
+    hint("\n  desktidy deadlines done <n> · open <n> · remove <n> · add <date> <what> · scan <file>")
+    n = _pick("Number to open (Enter = none):", len(items))
+    if n:
+        cmd_deadlines(["open", str(n)])
+
+
+def cmd_groups(args):
+    from . import groups
+    cfg = config.load_config()
+    found = groups.find(cfg)
+    if args and args[0].lower() == "apply":
+        n = args[1] if len(args) > 1 else ""
+        if not (n.isdigit() and 1 <= int(n) <= len(found)):
+            fail("Usage: desktidy groups apply <n> [--pin] [--to <folder>]   (see: desktidy groups)")
+            return
+        g = found[int(n) - 1]
+        to = args[args.index("--to") + 1] if "--to" in args and args.index("--to") + 1 < len(args) else None
+        target = resolve_folder(to) if to else g.target
+        moved = groups.apply(g, cfg, target, pin="--pin" in args)
+        ok(f"{len(moved)} file(s) moved to {C.BOLD}{config.short(target)}{C.X}" + (" (pinned)" if "--pin" in args else ""))
+        info(f"Undo any of them: {C.W}desktidy undo <name>{C.X}")
+        return
+    title(f"Groups in {config.short(cfg.default_destination)}")
+    if not found:
+        info("No groups: the files waiting to be sorted have little in common (or there are fewer than 3).")
+        return
+    for i, g in enumerate(found, 1):
+        where = f"{C.G}existing{C.X} {config.short(g.target)}" if g.existing else f"{C.Y}new{C.X} {config.short(g.target)}"
+        print(f"\n  {C.W}{i}){C.X} {C.BOLD}{len(g.files)} files about {g.label}{C.X}\n      -> {where}")
+        for f in g.files[:5]:
+            print(f"      {C.GR}· {os.path.basename(f)}{C.X}")
+        if len(g.files) > 5:
+            print(f"      {C.GR}  ... and {len(g.files) - 5} more{C.X}")
+    hint("\n  desktidy groups apply <n> [--pin] [--to <folder>]   (--pin: the next ones go there by themselves)")
+    n = _pick("Number to apply now (Enter = none):", len(found))
+    if n:
+        pin = not found[n - 1].existing and confirm("Pin the folder, so the next ones go there by themselves?", True)
+        cmd_groups(["apply", str(n)] + (["--pin"] if pin else []))
+
+
+def cmd_versions(args):
+    from . import versions
+    cfg = config.load_config()
+    folder_args = [a for a in args if not a.startswith("--") and a.lower() not in ("apply", "all") and not a.isdigit()]
+    folder = resolve_folder(" ".join(folder_args)) if folder_args else None
+    found = versions.find(cfg, folder)
+    if args and args[0].lower() == "apply":
+        n = args[1] if len(args) > 1 else ""
+        chosen = found if n == "all" else [found[int(n) - 1]] if n.isdigit() and 1 <= int(n) <= len(found) else []
+        if not chosen:
+            fail("Usage: desktidy versions apply <n>|all   (see: desktidy versions)")
+            return
+        moved = sum(len(versions.apply(f)) for f in chosen)
+        ok(f"{moved} older version(s) moved into {versions.FOLDER} folders. Undo: desktidy undo <name>")
+        return
+    title("Old versions" + (f" in {config.short(folder)}" if folder else ""))
+    if not found:
+        info("No versions of the same document found.")
+        return
+    def changed(p: str) -> str:
+        return datetime.fromtimestamp(os.path.getmtime(p)).strftime("%d/%m/%Y %H:%M")
+    for i, f in enumerate(found, 1):
+        print(f"\n  {C.W}{i}){C.X} {C.BOLD}{os.path.basename(f.keep)}{C.X}  {C.GR}{config.short(f.folder)}{C.X}\n"
+              f"      {C.G}stays{C.X}  {C.GR}last changed {changed(f.keep)} (the newest){C.X}")
+        for o in f.older:
+            print(f"      {C.Y}aside{C.X} {os.path.basename(o)}  {C.GR}last changed {changed(o)}{C.X}")
+    hint(f"\n  The newest by date stays; the others go into {versions.FOLDER}. desktidy versions apply <n> | all")
+    if INTERACTIVE or sys.stdin.isatty():
+        answer = ask("Number to tidy, 'all', or Enter = none:").lower()
+        if answer == "all" or (answer.isdigit() and 1 <= int(answer) <= len(found)):
+            cmd_versions(["apply", answer] + folder_args)
+
+
+def cmd_installers(args):
+    from . import installers
+    cfg = config.load_config()
+    info("Comparing your installers with the installed programs...")
+    found = installers.find(cfg)
+    if not found:
+        ok("No installers of programs that are already installed")
+        return
+    same = [c for c in found if c.same_version]
+    older = [c for c in found if not c.same_version]
+    title(f"Installers you may not need: {installers.human(sum(c.size for c in found))}")
+    for label, group in (("Same version installed", same), ("A newer version is installed", older)):
+        if not group:
+            continue
+        print(f"\n  {C.BOLD}{label}{C.X} {C.GR}({installers.human(sum(c.size for c in group))}){C.X}")
+        for c in group:
+            folder = config.short(os.path.dirname(c.path))
+            print(f"   {C.CY}{installers.human(c.size):>9}{C.X}  {os.path.basename(c.path)}  {C.GR}{folder}{C.X}\n"
+                  f"              {C.GR}installed: {c.installed} {c.installed_version}{C.X}")
+    if not (args and args[0].lower() in ("clean", "remove", "delete")):
+        hint("\n  Send them to the Recycle Bin: desktidy installers clean   (you confirm each group)")
+        return
+    can_ask = INTERACTIVE or sys.stdin.isatty()
+    if not can_ask and "--yes" not in args:
+        fail("Nothing recycled: confirm with  desktidy installers clean --yes  (same-version installers only)")
+        return
+    chosen = []
+    if same and (not can_ask or confirm(f"Recycle the {len(same)} installer(s) of the same version?", True)):
+        chosen += same
+    if older and can_ask and confirm(f"Recycle the {len(older)} installer(s) older than the installed program?"):
+        chosen += older
+    files, size = installers.clean(chosen)
+    ok(f"{files} installer(s) sent to the Recycle Bin, {installers.human(size)} freed (restore them from there)")
+
+
+def cmd_archive(args):
+    from . import archive
+    sub = args[0].lower() if args else ""
+    value = args[1].lower() if len(args) > 1 else ""
+    if sub in ("on", "off"):
+        config.update_config(lambda d: d.setdefault("archive", {}).__setitem__("enabled", sub == "on"))
+        ok("Automatic archive " + ("on: once a day" if sub == "on" else "off"))
+        return
+    if sub == "after" and value.isdigit():
+        config.update_config(lambda d: d.setdefault("archive", {}).__setitem__("after_days", int(value)))
+        ok(f"Items untouched for {value} days are archived")
+        return
+    if sub == "zip" and value in ("on", "off"):
+        config.update_config(lambda d: d.setdefault("archive", {}).__setitem__("zip", value == "on"))
+        ok("Archived items are " + ("compressed into .zip" if value == "on" else "moved as they are"))
+        return
+    cfg = config.load_config()
+    s = archive.settings(cfg)
+    items = archive.candidates(cfg)
+    title("Archive")
+    row("Automatic", (f"{C.G}on{C.X}" if s["enabled"] else f"{C.Y}off{C.X} (desktidy archive on)")
+        + f" · after {s['after_days']} days · {'zip' if s['zip'] else 'as they are'}")
+    row("Archive folder", config.short(cfg.expand(s["folder"])))
+    row("Looks in", ", ".join(config.short(cfg.expand(x)) for x in s["sources"] if x))
+    if not items:
+        ok("Nothing to archive right now")
+        return
+    print(f"\n  {C.BOLD}{len(items)} item(s) untouched for {s['after_days']}+ days:{C.X}")
+    for path, is_dir, latest in items[:15]:
+        suffix = os.sep if is_dir else ""
+        print(f"   {C.GR}{datetime.fromtimestamp(latest):%d/%m/%Y}{C.X}  {os.path.basename(path)}{suffix}")
+    if sub == "now" or ((INTERACTIVE or sys.stdin.isatty()) and confirm("Archive them now?")):
+        done = 0
+        for path, is_dir, latest in items:
+            try:
+                archive.archive_one(path, is_dir, latest, cfg)
+                done += 1
+            except OSError as ex:
+                fail(f"{os.path.basename(path)}: {ex}")
+        ok(f"{done} item(s) archived. Undo any of them: desktidy undo <name>")
+
+
+def cmd_import(args):
+    from . import importer
+    sub = args[0].lower() if args else ""
+    if sub == "auto" and len(args) > 1 and args[1].lower() in ("on", "off"):
+        config.update_config(lambda d: d.setdefault("import", {}).__setitem__("auto", args[1].lower() == "on"))
+        ok("Photos are imported " + ("without asking" if args[1].lower() == "on" else "after you confirm"))
+        return
+    cfg = config.load_config()
+    if re.fullmatch(r"[a-z]:?\\?", sub):
+        root = sub[0].upper() + ":\\"
+        label = root
+    else:
+        cards = importer.cards(cfg)
+        if not cards:
+            info("No memory card or USB stick with a DCIM folder is plugged in.")
+            hint("  Phones connected by cable have no drive letter: copy from them with Explorer or the phone's app.")
+            return
+        root, label = cards[0]["root"], (cards[0]["label"] or "card") + f" ({cards[0]['letter']}:)"
+    info(f"Reading the photos on {label}...")
+    new = importer.new_media(root, cfg)
+    if not new:
+        ok("Nothing new to import")
+        return
+    size = sum(m.size for m in new)
+    first, last = new[0].taken, new[-1].taken
+    title(f"{len(new)} new photos/videos on {label}")
+    row("Taken", f"{first:%d %b %Y} - {last:%d %b %Y}")
+    row("Size", f"{size / 1e9:.2f} GB" if size > 1e9 else f"{size / 1e6:.0f} MB")
+    row("Into", f"{config.short(importer.target_for(new[0], cfg))} ...")
+    if not GUI and not confirm("Import them now? (they are copied: the card is not changed)", True):
+        return
+    if GUI:
+        winapi.notify(f"{APP_NAME}: importing {len(new)} photos/videos", f"From {label}. You can keep working.")
+    s = importer.run(root, cfg, progress=None if GUI else lambda n, m: print(f"\r  {C.GR}{n}/{len(new)}{C.X}", end=""))
+    print("\r", end="")
+    text = f"{s['copied']} imported, {s['skipped']} already there" + (f", {s['failed']} failed" if s["failed"] else "")
+    ok(text)
+    for f in s["folders"][:5]:
+        print(f"   {C.GR}{config.short(f)}{C.X}")
+    if GUI:
+        winapi.notify(f"{APP_NAME}: photos imported", text)
+
+
+def cmd_learn(args):
+    from . import learn
+    sub = args[0].lower() if args else ""
+    if sub in ("accept", "add", "yes", "reject", "no") and len(args) > 1 and args[1].isdigit():
+        p = (learn.accept if sub in ("accept", "add", "yes") else learn.reject)(int(args[1]))
+        if not p:
+            fail("No such proposal (see: desktidy learn)")
+        elif sub in ("accept", "add", "yes"):
+            ok(f"Rule added at the top of your rules: {C.BOLD}{p['rule']['name']}{C.X} -> {p['rule']['destination']}")
+        else:
+            ok("It won't be proposed again")
+        return
+    if sub in ("scan", "now"):
+        info("Looking for files you moved yourself...")
+        new = learn.scan(config.load_config())
+        ok(f"{len(new)} new proposal(s)")
+    d = learn.load()
+    title("Learned from your corrections")
+    if d["corrections"]:
+        print(f"  {C.GR}Latest corrections:{C.X}")
+        for c in d["corrections"][-6:][::-1]:
+            print(f"   {C.GR}{c['at'][:10]}{C.X}  {c['file']}  {C.GR}{os.path.basename(c['chosen'])}{C.X} -> "
+                  f"{C.G}{os.path.basename(c['user'])}{C.X}")
+    else:
+        info("No corrections yet: when you move a file DeskTidy placed, it notices (every 30 minutes).")
+    if not d["proposals"]:
+        return
+    print(f"\n  {C.BOLD}Proposed rules{C.X}")
+    for i, p in enumerate(d["proposals"], 1):
+        r = p["rule"]
+        what = ", ".join(r.get("name_words", []) + r.get("topics", []))
+        print(f"   {C.W}{i}){C.X} files about {C.CY}{what}{C.X} -> {C.G}{r['destination']}{C.X}\n"
+              f"      {C.GR}from: {', '.join(p['examples'][:3])}{C.X}")
+    hint("\n  desktidy learn accept <n> · learn reject <n>")
+    n = _pick("Number to accept (Enter = later):", len(d["proposals"]))
+    if n:
+        cmd_learn(["accept", str(n)])
+
+
+def cmd_limit(args):
+    """How many files DeskTidy may tidy per day (AI or not)."""
+    cfg = config.load_config()
+    text = args[0] if args else ""
+    if not text:
+        limit = config.tidy_limit(cfg)
+        title("Daily limit")
+        row("Files tidied per day", f"{tidied_today()} today, " + (f"at most {limit}" if limit is not None else "no limit"))
+        row("Files the AI looks at", f"{usage.read()['today_files']} today, at most "
+                                     f"{config.limit_text(config.daily_limit(cfg))} (desktidy ai max)")
+        hint("\n  desktidy limit 30 · desktidy limit unlimited · desktidy ai max 50 | unlimited")
+        if INTERACTIVE:
+            text = ask("New limit (a number or 'unlimited', Enter = keep):")
+        if not text:
+            return
+    value = config.parse_limit(text)
+    if value is None or value == 0:
+        fail("Type a number of files (1 or more) or 'unlimited'. To stop for a while: desktidy pause")
+        return
+    config.update_config(lambda d: d.setdefault("limits", {}).__setitem__("files_per_day", value))
+    if value == config.UNLIMITED:
+        ok("No daily limit: DeskTidy tidies every file that is ready")
+    else:
+        ok(f"At most {C.BOLD}{value}{C.X} files a day; the others wait for the next day ({tidied_today()} tidied today)")
+
+
+def cmd_explorer(args):
+    from . import explorer
+    sub = args[0].lower() if args else ""
+    if sub in ("on", "install"):
+        explorer.install()
+        ok("Right-click menu 'DeskTidy' added (Windows 11: under 'Show more options'), notification buttons on")
+    elif sub in ("off", "remove", "uninstall"):
+        ok("Removed" if explorer.uninstall() else "It was not installed")
+    else:
+        info("Explorer menu and notification buttons: " + (f"{C.G}on{C.X}" if explorer.installed() else f"{C.Y}off{C.X}"))
+        hint("  desktidy explorer on | off")
+
+
+def cmd_editor(args):
+    from . import editor
+    info("Opening the settings in your browser (only this PC can reach it). Ctrl+C or 'Close editor' to finish.")
+    editor.serve(open_browser="--no-browser" not in args, say=lambda m: hint("  " + m))
+    ok("Editor closed")
+
+
+def cmd_update(args):
+    from . import updates
+    info(f"Checking GitHub for a new version (you have {__version__})...")
+    release = updates.latest()
+    if release is None:
+        warn("Could not reach GitHub, or no release published yet")
+        return
+    if not updates.newer(release["version"]):
+        ok(f"You have the latest version ({__version__})")
+        return
+    title(f"DeskTidy {release['version']} is available")
+    for line in release["notes"].splitlines()[:25]:
+        print(f"  {C.GR}{line}{C.X}")
+    kind, commands = updates.install_kind()
+    hint(f"\n  Installed with {kind}: " + "  &&  ".join(" ".join(c) for c in commands))
+    if (INTERACTIVE or sys.stdin.isatty()) and confirm("Update now?", True):
+        was_running = running()
+        if was_running:
+            stop_service()
+        if updates.run_update(lambda m: hint("  " + m)):
+            ok("Updated. Open a new Command Prompt to use the new version")
+        else:
+            fail(f"The update failed: see above, or download it from {release['url']}")
+        if was_running:
+            start_service()
+
+
+def _notify_result(title_text: str, body: str, ids: list[str] | None = None) -> None:
+    if GUI:
+        buttons = [("Open", f"desktidy:open?id={ids[-1]}"), ("Undo", f"desktidy:undo?ids={ids[-1]}")] if ids else []
+        winapi.notify(title_text, body, buttons)
+
+
+def cmd_tidy(args):
+    """Tidy one file or folder now (Explorer menu), with the AI if the mode allows it."""
+    from . import classifier, naming
+    from . import content as ct
+    from .service import Options, Service
+    target = os.path.abspath(unquote(" ".join(args)))
+    if not os.path.exists(target):
+        fail(f"Not found: {target}")
+        return
+    if os.path.basename(target).startswith("!"):
+        fail(f"{os.path.basename(target)} starts with ! (hands off): remove the ! first")
+        return
+    is_dir = os.path.isdir(target)
+    if is_dir and folders.holds_pinned(target):
+        fail("A pinned folder (or a folder holding one) is never moved")
+        return
+    cfg = config.load_config()
+    an = ct.analyze(target, is_dir, cfg)
+    d = classifier.decide(target, is_dir, cfg, an)
+    plan = naming.plan(an, cfg)
+    svc = Service(Options(once=True))
+    base = os.path.dirname(target)
+    lines = None
+    if classifier.wants_ai(d, an, cfg):
+        from . import ai
+        key = ai.ready(cfg, hint)
+        if key:
+            item = ai.item_for(target, is_dir, base, an, d, plan, cfg)
+            lines = svc.finish_item(item, (ai.ask([item], cfg, key, hint) or {}).get(1), cfg)
+    if lines is None:
+        lines = svc.finish(cfg, target, is_dir, base, d.dest, d.reason, plan.new_stem or plan.fallback, plan.reason,
+                           an=an)
+    if not lines:
+        ok(f"{os.path.basename(target)} is already in the right place")
+        _notify_result(APP_NAME, f"{os.path.basename(target)} is already in the right place")
+        return
+    ok(lines[0])
+    _notify_result(f"{APP_NAME}: tidied", lines[0], svc.ids)
+
+
+def cmd_handsoff(args):
+    """Add or remove the "!" that tells DeskTidy to leave an item alone."""
+    target = os.path.abspath(unquote(" ".join(args)))
+    if not os.path.exists(target):
+        fail(f"Not found: {target}")
+        return
+    name = os.path.basename(target)
+    new = name[1:] if name.startswith("!") else "!" + name
+    renamed = os.path.join(os.path.dirname(target), new)
+    if os.path.exists(renamed):
+        fail(f"{new} already exists there")
+        return
+    os.rename(target, renamed)
+    record("RENAMED", target, renamed, "hands off (!)" if new.startswith("!") else "DeskTidy may tidy it again")
+    text = f"{new}: DeskTidy leaves it alone" if new.startswith("!") else f"{new}: DeskTidy may tidy it again"
+    ok(text)
+    _notify_result(APP_NAME, text)
+
+
+def cmd_pin_toggle(args):
+    target = os.path.abspath(unquote(" ".join(args)))
+    if not os.path.isdir(target):
+        fail(f"Not a folder: {target}")
+        return
+    if any(os.path.normcase(v["path"]) == os.path.normcase(target) for v in folders.load_pinned()["pinned"]):
+        folders.unpin(target)
+        text = f"{os.path.basename(target)} is no longer pinned"
+    else:
+        folders.pin(target)
+        text = f"{os.path.basename(target)} pinned: new files about it will go there"
+    ok(text)
+    _notify_result(APP_NAME, text)
+
+
+def cmd_url(args):
+    """desktidy: links (notification buttons, Explorer). Only a fixed list of actions with checked ids."""
+    from . import deadlines, explorer
+    parsed = explorer.parse_url(args[0] if args else "")
+    if not parsed:
+        fail("Unknown DeskTidy link")
+        return
+    action, p = parsed
+    if action in explorer.CONSOLE_ACTIONS:
+        explorer.open_console(*([] if action == "console" else [action]))
+    elif action == "undo":
+        cmd_undo([p.get("ids", "").replace(",", " ")])
+    elif action == "open":
+        from .ops import current_path
+        m = next((m for m in read_moves() if move_id(m) == p.get("id")), None)
+        if m:
+            winapi.reveal(current_path(m["destination"]))
+    elif action in ("deadline-done", "deadline-open"):
+        item = deadlines.find(p.get("id", ""))
+        if not item:
+            return
+        if action == "deadline-done":
+            deadlines.update(item["id"], done=True)
+            _notify_result(APP_NAME, f"Done: {item['what']}. No more reminders.")
+        elif item.get("path") and os.path.exists(item["path"]):
+            os.startfile(item["path"])
+        else:
+            explorer.open_console("deadlines")
+    elif action == "import":
+        cmd_import([p.get("drive", "") + ":"])
 
 
 # ================================================================ commands: more
@@ -1252,6 +1921,12 @@ def cmd_install(args):
         info("The 'desktidy' command is already available")
     config.load_config()
     ok(f"Settings: {config.path('rules')}")
+    from . import explorer
+    try:
+        explorer.install()
+        ok("Right-click menu in Explorer (DeskTidy) and the buttons of the notifications")
+    except OSError as ex:
+        warn(f"Explorer menu not installed ({ex}): desktidy explorer on")
     if winapi.register_logon_task(config.TASK_NAME, service_exe(), str(config.data_dir()), start_now=not running()):
         ok("Starts at every sign-in (Task Scheduler: DeskTidy)")
     else:
@@ -1275,6 +1950,9 @@ def cmd_uninstall(args):
         (ok if winapi.schtasks(config.TASK_NAME, "/delete", "/f") else fail)("Startup task removed")
     if winapi.remove_from_path(config.path("bin")):
         ok("'desktidy' command removed")
+    from . import explorer
+    if explorer.uninstall():
+        ok("Explorer menu and desktidy: links removed")
     info(f"To delete everything: remove {config.data_dir()} and the program folder")
 
 
@@ -1292,32 +1970,50 @@ def cmd_about(args):
 
 # ================================================================ dispatch
 COMMANDS = [  # (number, name, function, description, aliases, section)
-    (1, "setup", cmd_setup, "first-run setup: house rules + at least 2 pinned folders", ["init"], "Start here"),
+    (1, "setup", cmd_setup, "first-run setup: house rules, pinned folders, daily limit", ["init"], "Start here"),
     (2, "guide", cmd_guide, "the house rules ('!' = hands off, pinned folders, undo...)", ["house-rules"], "Start here"),
-    (3, "status", cmd_status, "service, AI, spend and latest moves", ["s", "st"], "Service"),
+    (3, "status", cmd_status, "service, limits, AI, deadlines and latest moves", ["s", "st"], "Service"),
     (4, "pause", cmd_pause, "pause  (pause 30m · pause 2h · pause 18:30)", [], "Service"),
     (5, "resume", cmd_resume, "end the pause", ["unpause"], "Service"),
     (6, "start", cmd_start, "start the service", ["run"], "Service"),
     (7, "stop", cmd_stop, "stop now, starts again at sign-in  (stop forever)", [], "Service"),
     (8, "restart", cmd_restart, "stop and start", [], "Service"),
     (9, "autostart", cmd_autostart, "start at sign-in  (on · off)", ["boot"], "Service"),
-    (10, "where", cmd_where, "where did my files go  (where invoice · where --all)", ["find", "w"], "Files"),
-    (11, "undo", cmd_undo, "put a file back where it was, with its old name", ["restore"], "Files"),
-    (12, "pinned", cmd_pinned, "pinned folders  (pin recipes cooking · unpin 1)", ["pins"], "Files"),
-    (13, "explain", cmd_explain, "what DeskTidy understands of a file  (explain x.pdf)", ["why", "analyze"], "Files"),
-    (14, "preview", cmd_preview, "what it would do now, moving nothing  (preview --now)", ["dry-run"], "Files"),
-    (15, "rename", cmd_rename, "smart renaming  (smart · generic · off)", [], "Files"),
-    (16, "spend", cmd_spend, "AI spend and balance  (spend credit 4.85 · spend web)", ["cost", "balance", "usage"], "AI"),
-    (17, "ai", cmd_ai, "how much AI: off · limited · moderate · ai-only", ["mode"], "AI"),
-    (18, "key", cmd_key, "API key of the chosen AI service  (key test · key remove)", ["apikey"], "AI"),
-    (19, "advice", cmd_advice, "ideas to organise files and folders better  (advice new)", ["tips", "consigli"], "AI"),
-    (20, "log", cmd_log, "activity log  (log errors · log 100)", ["errors"], "More"),
-    (21, "rules", cmd_rules, "edit rules.json  (rules check)", ["config", "settings"], "More"),
-    (22, "open", cmd_open, "open the data folder", ["data"], "More"),
-    (23, "install", cmd_install, "add the command and start at sign-in", [], "More"),
-    (24, "uninstall", cmd_uninstall, "remove autostart and the command", [], "More"),
-    (25, "about", cmd_about, "version and author", ["version", "info"], "More"),
+    (10, "limit", cmd_limit, "files tidied per day at most  (limit 30 · limit unlimited)", ["limits", "max"], "Service"),
+    (11, "where", cmd_where, "where did my files go  (where invoice · where --all)", ["w"], "Files"),
+    (12, "undo", cmd_undo, "put a file back where it was, with its old name", ["restore"], "Files"),
+    (13, "find", cmd_find, "search by content  (find electricity bill september)", ["search", "cerca"], "Files"),
+    (14, "pinned", cmd_pinned, "pinned folders  (pin recipes cooking · unpin 1)", ["pins"], "Files"),
+    (15, "explain", cmd_explain, "what DeskTidy understands of a file  (explain x.pdf)", ["why", "analyze"], "Files"),
+    (16, "preview", cmd_preview, "what it would do now, moving nothing  (preview --now)", ["dry-run"], "Files"),
+    (17, "rename", cmd_rename, "smart renaming  (smart · generic · off)", [], "Files"),
+    (18, "tidy", cmd_tidy, "tidy one file now  (tidy x.pdf, also from the right-click menu)", ["now"], "Files"),
+    (19, "deadlines", cmd_deadlines, "bills and deadlines found in your documents  (deadlines done 1)",
+     ["scadenze", "due"], "Tidy up"),
+    (20, "groups", cmd_groups, "the to-sort pile, grouped into folders  (groups apply 1 --pin)", ["pile"], "Tidy up"),
+    (21, "versions", cmd_versions, "old versions of the same document  (versions apply all)", ["versioni"], "Tidy up"),
+    (22, "installers", cmd_installers, "setup files of programs already installed  (installers clean)",
+     ["installer"], "Tidy up"),
+    (23, "archive", cmd_archive, "archive what is untouched for months  (archive on · archive now)", ["archivio"],
+     "Tidy up"),
+    (24, "import", cmd_import, "photos from a memory card, sorted by date  (import E:)", ["photos"], "Tidy up"),
+    (25, "learn", cmd_learn, "rules learned from your corrections  (learn accept 1)", ["learned"], "Tidy up"),
+    (26, "ai", cmd_ai, "how much AI: off · limited · moderate · ai-only  (ai max 50 | unlimited)", ["mode"], "AI"),
+    (27, "key", cmd_key, "API key of the chosen AI service  (key test · key remove)", ["apikey"], "AI"),
+    (28, "spend", cmd_spend, "AI spend and balance  (spend credit 4.85 · spend web)", ["cost", "balance", "usage"], "AI"),
+    (29, "advice", cmd_advice, "ideas to organise files and folders  (advice new · advice apply 2)", ["tips", "consigli"],
+     "AI"),
+    (30, "editor", cmd_editor, "all the settings in your browser", ["ui", "gui", "settings-ui"], "More"),
+    (31, "explorer", cmd_explorer, "right-click menu and notification buttons  (on · off)", ["context-menu"], "More"),
+    (32, "update", cmd_update, "check for a new version and update", ["upgrade"], "More"),
+    (33, "log", cmd_log, "activity log  (log errors · log 100)", ["errors"], "More"),
+    (34, "rules", cmd_rules, "edit rules.json  (rules check)", ["config", "settings"], "More"),
+    (35, "open", cmd_open, "open the data folder", ["data"], "More"),
+    (36, "install", cmd_install, "command, autostart, Explorer menu", [], "More"),
+    (37, "uninstall", cmd_uninstall, "remove autostart, the command and the Explorer menu", [], "More"),
+    (38, "about", cmd_about, "version and author", ["version", "info"], "More"),
 ]
+HIDDEN = {"handsoff": cmd_handsoff, "pin-toggle": cmd_pin_toggle, "url": cmd_url}  # Explorer menu and links
 
 
 def find_command(name: str):
@@ -1330,6 +2026,8 @@ def find_command(name: str):
         return lambda a: cmd_log(["errors", *a])
     if name in ("provider", "providers"):
         return lambda a: cmd_ai(["provider", *a])
+    if name in HIDDEN:
+        return HIDDEN[name]
     for number, cmd, func, _, aliases, _ in COMMANDS:
         if name in (str(number), cmd) or name in aliases:
             return func
@@ -1358,6 +2056,9 @@ def cmd_help(args):
     desktidy autostart off          desktidy spend credit 4.85
     desktidy pin pasta recipes      desktidy explain "C:\\Users\\me\\Downloads\\scan0001.pdf"
     desktidy ai ai-only             desktidy advice new
+    desktidy find bolletta luce     desktidy deadlines
+    desktidy limit 30               desktidy ai max unlimited
+    desktidy installers             desktidy editor
 
   {C.BOLD}Good to know{C.X}
     {C.GR}- Files and folders whose name starts with ! are never touched ("!draft.docx").
@@ -1371,6 +2072,14 @@ def split_line(line: str) -> list[str]:
 
 
 def run(argv: list[str]) -> int:
+    if "--pause" in argv:  # started in its own window (Explorer menu, notification): keep it open at the end
+        try:
+            return run([a for a in argv if a != "--pause"])
+        finally:
+            try:
+                input(f"\n  {C.GR}Press Enter to close{C.X} ")
+            except (EOFError, KeyboardInterrupt):
+                pass
     if not argv:
         return console()
     name, args = argv[0], argv[1:]
@@ -1447,6 +2156,24 @@ def console() -> int:
             warn("interrupted")
         except Exception as ex:
             fail(f"{type(ex).__name__}: {ex}")
+
+
+def main_gui() -> None:
+    """desktidyw.exe: commands from the Explorer menu, the notification buttons and the tray, without a console.
+    Nobody can type an answer, so nothing is asked; problems are shown in a message box."""
+    global GUI
+    GUI = True
+    sys.stdin = io.StringIO("")
+    buffer = io.StringIO()
+    try:
+        with redirect_stdout(buffer):
+            run(sys.argv[1:])
+    except Exception as ex:
+        winapi.message(f"{type(ex).__name__}: {ex}", APP_NAME, error=True)
+        return
+    problems = [line.strip()[4:] for line in buffer.getvalue().splitlines() if line.strip().startswith("[-]")]
+    if problems:
+        winapi.message("\n".join(problems), APP_NAME, error=True)
 
 
 def main() -> None:
