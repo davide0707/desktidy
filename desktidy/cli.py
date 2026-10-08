@@ -339,7 +339,7 @@ def cmd_status(args):
     from . import providers
     mode, p = config.ai_mode(cfg), providers.current(cfg)
     row("AI", f"{C.CY}{mode}{C.X} - {config.AI_MODES[mode][0]}" + (
-        "" if mode == "off" else f" {C.GR}(files a day: {config.limit_text(config.daily_limit(cfg))}){C.X}"))
+        "" if mode == "off" else f" {C.GR}(AI files: {config.limit_text(config.daily_limit(cfg))}){C.X}"))
     if mode != "off":
         row("AI service", f"{p.name} · {config.ai_model(cfg)} · {config.ai_delivery(cfg)}"
                           + (f" · {C.G}free{C.X}" if p.free else ""))
