@@ -279,8 +279,17 @@ class Pinned:
         return points, "; ".join(reasons)
 
 
+_parsed: dict = {"data": None, "value": []}
+
+
 def active_pinned() -> list[Pinned]:
-    return [Pinned(v) for v in load_pinned()["pinned"] if os.path.isdir(v["path"])]
+    """The pinned folders that exist. Called for every file and folder at every pass, so pinned.json is parsed
+    (and its names stemmed) again only when it changes."""
+    data = config.read_json_cached(config.path("pinned"))
+    if data is not _parsed["data"]:
+        entries = data.get("pinned", []) if isinstance(data, dict) else []
+        _parsed.update(data=data, value=[Pinned(v) for v in entries if isinstance(v, dict) and v.get("path")])
+    return [p for p in _parsed["value"] if os.path.isdir(p.path)]
 
 
 def setup_missing(cfg: dict) -> str | None:
@@ -296,9 +305,9 @@ def setup_missing(cfg: dict) -> str | None:
     return None
 
 
-def holds_pinned(folder: str) -> bool:
+def holds_pinned(folder: str, pinned: list[Pinned] | None = None) -> bool:
     """True if `folder` is a pinned folder or contains one (such folders are never moved)."""
-    return any(inside(p.path, folder) for p in active_pinned())
+    return any(inside(p.path, folder) for p in (active_pinned() if pinned is None else pinned))
 
 
 _contexts: dict = {}

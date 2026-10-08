@@ -3,6 +3,7 @@ OpenAI-compatible server running on localhost (no real service is contacted)."""
 
 import json
 import os
+import re
 import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -17,6 +18,7 @@ class FakeServer(BaseHTTPRequestHandler):
     refuse_schema = False
     requests: list = []
     folder_index = 1
+    pick_recipes = False      # answer with the number the request gave to the Recipes folder
 
     def log_message(self, *args):
         pass
@@ -39,7 +41,14 @@ class FakeServer(BaseHTTPRequestHandler):
         FakeServer.requests.append(body)
         if FakeServer.refuse_schema and body.get("response_format", {}).get("type") == "json_schema":
             return self._send(400, {"error": {"message": "response_format json_schema not supported"}})
-        answer = {"files": [{"n": 1, "f": FakeServer.folder_index, "c": "h", "name": "Grocery list", "why": "food"}]}
+        if "organising personal files" in body["messages"][0]["content"]:
+            answer = {"tips": [{"k": "pin", "t": "Pin the recipes folder", "d": "Recipes keep arriving.", "f": [2, 99]}]}
+            return self._send(200, {"choices": [{"message": {"content": json.dumps(answer)}}],
+                                    "usage": {"prompt_tokens": 900, "completion_tokens": 60}})
+        user_text = "".join(p.get("text", "") for p in body["messages"][1]["content"])
+        found = re.search(r"^(\d+)\s+Recipes$", user_text, re.M) if FakeServer.pick_recipes else None
+        folder = int(found.group(1)) if found else FakeServer.folder_index
+        answer = {"files": [{"n": 1, "f": folder, "c": "h", "name": "Grocery list", "why": "food"}]}
         self._send(200, {"choices": [{"message": {"content": "```json\n" + json.dumps(answer) + "\n```"}}],
                          "usage": {"prompt_tokens": 321, "completion_tokens": 45}})
 
@@ -112,7 +121,7 @@ class TestFakeServer(IsolatedTest):
 
     def setUp(self):
         super().setUp()
-        FakeServer.requests, FakeServer.refuse_schema = [], False
+        FakeServer.requests, FakeServer.refuse_schema, FakeServer.pick_recipes = [], False, False
         ai._ladder.clear()
         self.cfg = self.config(ai={"mode": "limited", "provider": "custom", "base_url": self.url, "model": "test-model",
                                    "candidate_folders": [{"path": "{D}", "depth": 2}]})
@@ -160,6 +169,32 @@ class TestFakeServer(IsolatedTest):
         self.assertIsNone(ai.ask([params_item], cfg, "k", said.append))
         self.assertTrue(any("cannot reach" in s for s in said))
         ai._paused_until[0] = 0.0
+
+    def test_a_full_pass_of_the_service(self):
+        """Nothing mocked between the service and the AI service: what really runs at every pass."""
+        from desktidy import folders, service
+        cfg = self.config(ai={"mode": "limited", "provider": "custom", "base_url": self.url, "model": "test-model",
+                              "gather_seconds": 0, "candidate_folders": [{"path": "{D}", "depth": 2}]})
+        folders.pin(self.dest("Recipes"))           # pinned folders are always in the short list
+        FakeServer.pick_recipes = True
+        self.write("scan0002.txt", "milk eggs bread butter cheese apples bananas pasta rice tomatoes " * 4)
+        service.Service(service.Options()).tick(cfg)
+        self.assertEqual(os.listdir(self.dest("Recipes")), ["Grocery_list.txt"])
+        self.assertIn("name suggested by AI", service.read_moves()[0]["reason"])
+
+    def test_organisation_advice(self):
+        from desktidy import advice
+        said = []
+        result = advice.generate(self.cfg, said.append)
+        self.assertEqual(result["tips"][0]["kind"], "pin")
+        ov = advice.overview(self.cfg)
+        self.assertEqual(result["tips"][0]["paths"], [ov.folders[1]])     # 99 does not exist: dropped
+        self.assertEqual(advice.load()["tips"], result["tips"])
+        u = usage.read()
+        self.assertEqual((u["total_files"], u["days"][max(u["days"])]["requests"]), (0, 1))  # no file counted
+        self.assertIn("organisation advice", said[0])
+        sent = FakeServer.requests[-1]["messages"][1]["content"][0]["text"]
+        self.assertIn("Recipes", sent)
 
 
 if __name__ == "__main__":

@@ -26,6 +26,7 @@ _FILES = {
     "jobs": "ai_jobs.json",         # AI batches waiting for an answer
     "kept": "kept.json",            # files restored by undo: left alone until they change
     "setup": "setup.json",          # when the house rules were accepted
+    "advice": "advice.json",        # the latest organisation tips (desktidy advice)
     "pause": "PAUSE",               # exists = paused (may contain "until=ISO-TIME")
     "stop": "STOP",                 # exists = the service stops at its next check
     "bin": "bin",                   # holds desktidy.cmd, added to PATH by "desktidy install"
@@ -35,7 +36,8 @@ AI_MODES = {  # mode: (what it does, files per day)
     "off": ("never: the offline engine decides everything", 0),
     "limited": ("only for files the offline engine cannot place", 10),
     "moderate": ("also for files placed with low confidence", 30),
-    "ai-only": ("for every file except private ones; rules are the fallback", 100),
+    "ai-only": ("every file except private ones, fixes names that don't match the content, "
+                "and suggests a better organisation over time", 100),
 }
 MODELS = {"haiku": "claude-haiku-4-5", "sonnet": "claude-sonnet-5-5", "opus": "claude-opus-5-5"}
 PRICES = {  # USD per million tokens (input, output) of the paid models; free plans cost nothing
@@ -77,12 +79,33 @@ def read_json(file: str, default=None):
         return default
 
 
+_json_cache: dict = {}
+
+
+def read_json_cached(file: str, default=None):
+    """Like read_json, but parsed again only when the file changes: for the files read at every pass.
+    The result is shared, so callers must not modify it."""
+    try:
+        st = os.stat(file)
+    except OSError:
+        _json_cache.pop(file, None)
+        return default
+    stamp = (st.st_mtime_ns, st.st_size)
+    hit = _json_cache.get(file)
+    if hit and hit[0] == stamp:
+        return hit[1]
+    value = read_json(file, default)
+    _json_cache[file] = (stamp, value)
+    return value
+
+
 def write_json(file: str, data, indent: int | None = 1) -> None:
     """Atomic write: readers see either the old or the new file, never half of it."""
     tmp = file + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=indent, ensure_ascii=False)
     os.replace(tmp, file)
+    _json_cache.pop(file, None)
 
 
 # ---------------------------------------------------------------- settings

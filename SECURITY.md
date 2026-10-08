@@ -14,5 +14,7 @@ You will get an answer within a week.
 - When the AI is enabled, only a short text excerpt (or a downscaled image when there is no text), the file name and a
   short list of folder names are sent to the AI service you chose (with Ollama, nothing leaves your PC).
   Files matched by a `private` rule, photos and screenshots are never sent.
+- Organisation advice (`desktidy advice`, automatic only in `ai-only` mode) sends folder names, file counts and types
+  and two file names per folder (none from folders of `private` rules), never the content of a file.
 - Text inside files is treated as data: the AI is instructed to ignore any instruction written in a file, and its
   answer can only pick a folder from the list DeskTidy sent.

@@ -61,6 +61,20 @@ class TestRequest(IsolatedTest):
         self.assertIn("scan0002.txt", params["messages"][0]["content"][0]["text"])
         self.assertIn(" rename", params["messages"][0]["content"][0]["text"])
 
+    def test_name_check_flag(self):
+        self.cfg = self.config(ai={"mode": "ai-only", "candidate_folders": [{"path": "{D}", "depth": 2}]})
+        item = self.item("holiday_plans.txt", "Buy milk, eggs, bread, butter, cheese and apples for the week. " * 4)
+        self.assertTrue(item.check_name and not item.ask_name)
+        text = ai.build([item], self.cfg)[0]["messages"][0]["content"][0]["text"]
+        self.assertIn("holiday_plans.txt", text)
+        self.assertIn(" name?", text)
+        ok = ai.Answer(None, "h", "Weekly_shopping_list", "food")
+        self.assertEqual(ai.name_for(item, ok), "Weekly_shopping_list")
+        self.assertIsNone(ai.name_for(item, ai.Answer(None, "h", "Holiday_plans", "same")))
+        self.assertIsNone(ai.name_for(item, ai.Answer(None, "h", "", "fits")))
+        item.check_name = False
+        self.assertIsNone(ai.name_for(item, ok))                 # not asked: ignored
+
     def test_item_survives_a_restart(self):
         item = self.item("a.txt", "some text " * 10)
         again = ai.Item.from_dict(json.loads(json.dumps(item.to_dict())))

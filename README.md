@@ -50,13 +50,17 @@ before anything is moved ([HOUSE_RULES.md](HOUSE_RULES.md)).
   (Python, web, STM32, KiCad, gerber, 3D printing...). Plurals, singulars and typos are handled: `calculs notes.txt`
   still goes to *Calculus*.
 - **Smart renaming.** `scan0001.pdf`, `Document1.docx`, `download (3).pdf` or a name that has nothing to do with the
-  content get a real name, taken from the document title. The original name is always logged and `desktidy undo`
+  content get a real name, taken from the document title. When the AI looks at a file whose name doesn't match its
+  content, it fixes the name too, in the same request. The original name is always logged and `desktidy undo`
   brings it back.
+- **Advice on how to organise.** Once DeskTidy has an overview of your files, the AI suggests better ways to organise
+  them: folders to merge or split, clearer names, an archive, a pinned folder for what keeps landing in *To_Sort*
+  (`desktidy advice`). Ideas only: nothing is changed for you.
 - **Pinned folders.** Create `Recipes` on your Desktop and DeskTidy asks *"Pin it?"*. From then on recipes go there:
   by name, by content, or because they look like the files you already put inside.
 - **Any AI, free ones included.** Pick the service: **Groq, Google Gemini, Mistral, OpenRouter** (free plans),
   **Ollama** (free, runs on your PC, nothing leaves it), **Claude** or **OpenAI** (paid), or any OpenAI-compatible
-  server. Four levels: `off`, `limited`, `moderate`, `ai-only`.
+  server. Four levels: `off`, `limited`, `moderate`, `ai-only` (every file, with name checks and organisation advice).
 - **Cheap by design.** A short list of likely folders instead of the whole tree, several files per request, short
   excerpts, and Claude's Batch API at half price. **Measured: ~5.7× cheaper than sending the folder tree with every
   file** (see below).
@@ -121,10 +125,14 @@ Run `desktidy explain <file>` to see exactly what DeskTidy understood and why it
 | `scan0001.pdf` | `Invoice_2231_from_Northwind_Energy.pdf` | generic name, title from the first heading |
 | `Document1.docx` | `Lab_report_RC_filters.docx` | generic name, title from the document properties |
 | `holiday_photos_list.txt` (an electricity bill) | `Electricity_bill_September.txt` | the name didn't match the content |
-| `download (3).pdf` (no clear title) | `RC_Circuit_Resistance_Measurement.pdf` | name suggested by Claude in the same request |
+| `Report_final.pdf` (a shopping list, no title) | `Weekly_shopping_list.pdf` | the AI found the name didn't match the content |
+| `download (3).pdf` (no clear title) | `RC_Circuit_Resistance_Measurement.pdf` | name suggested by the AI in the same request |
 | `!draft.docx`, `IMG_2034.jpg`, `my_thesis.pdf` | unchanged | `!` means hands off; photos and good names are kept |
 
-`desktidy rename smart | generic | off` chooses how bold it is.
+`desktidy rename smart | generic | off` chooses how bold it is. In `smart` mode, every file the AI looks at also gets
+its name checked: the AI keeps your name when it fits (even loosely) and replaces it only when it is misleading or
+says nothing. Names that clearly match the content are never sent for checking, and an AI name must be meaningful
+and really different to replace yours.
 
 ## AI: free or paid, your choice
 
@@ -153,7 +161,8 @@ Every request is designed to be small, whatever the service:
 | What | Effect |
 |---|---|
 | Short list of likely folders per file (offline candidates, similar folders, pinned, top areas) | the folder tree was ~80% of the tokens |
-| Up to 8 files share one request | instructions and folders paid once |
+| Up to 8 files share one request, and files arriving close together wait up to 90 s for each other | instructions and folders paid once, fewer requests on free plans |
+| Name check only for names the offline engine can't match with the content | no tokens spent on good names |
 | ~1,200-character excerpt + key terms, from the text already read on the PC (OCR included) | the file itself is never uploaded |
 | Images only when there is no text, downscaled to 512 px (never to text-only services) | ~260 tokens per image |
 | Compact JSON answer with one-letter keys; a name is requested only when needed | few output tokens |
@@ -173,6 +182,21 @@ month and the total.
 **Never sent**: files matched by a `private` rule, photos, screenshots, programs. **Sent for the others**: the excerpt
 above, the file name and the short folder list. API keys are stored in your Windows user environment
 (`GROQ_API_KEY`, `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`...), never in a file.
+
+### Advice on how to organise
+
+In `ai-only` mode, once DeskTidy has tidied enough files to have an overview (30 by default), it asks the AI how your
+files and folders could be organised better, about once a week, and tells you with a notification. `desktidy advice`
+shows the ideas (merge, split, rename, archive, create or pin a folder, a naming convention), each with the folders
+involved; `desktidy advice open 2` opens them in Explorer and `desktidy advice pin 2` pins one. `desktidy advice new`
+asks right away in any AI mode. Nothing is moved or renamed for you.
+
+One small request (~2,000 tokens for 100 folders): folder names, how many files each holds and of which types, the
+year of the latest change, two file names per folder (none from private folders), and what DeskTidy saw recently
+(files left in *To_Sort*, moves you undid). Never the content of a file. Even without an AI, `desktidy advice` lists
+what it finds offline: a growing *To_Sort* pile, empty or very full folders, clutter in Downloads.
+Settings in the `ai` section: `advice` (`auto` = ai-only mode, `on`, `off`), `advice_after_files`, `advice_every_days`,
+`language` (empty = the language of your folder names).
 
 ## Commands
 
@@ -195,6 +219,7 @@ Type `desktidy` for the console (use the number or the name), or `desktidy <comm
 | `ai provider [name]` (or `provider`) | choose the AI service: groq, gemini, mistral, openrouter, ollama, claude, openai, custom |
 | `ai off · limited · moderate · ai-only` · `ai max <n>` · `ai model <id>` · `ai delivery batch · instant` | how much AI, which model |
 | `key` · `key test` · `key remove` | API key of the chosen service (hidden while you paste it, checked for free) |
+| `advice` · `advice new` · `advice open <n>` · `advice pin <n>` | ideas to organise files and folders better |
 | `log [errors · 100 · open]` · `rules [check]` · `open` | log, settings, data folder |
 | `install` · `uninstall` · `about` | command and autostart, version |
 
@@ -210,8 +235,8 @@ on the first run) and reload by themselves.
   "default_destination": "{DOCS}\\00_Inbox\\To_Sort",
   "rename": { "mode": "smart" },
   "pinned_folders": { "min_required": 2, "ask": true, "ask_for_new_folders_in": ["{HOME}\\Desktop"] },
-  "ai": { "provider": "groq", "mode": "limited", "model": "", "budget_usd": 5.0,
-          "user_context": "engineering student; electronics and web projects" },
+  "ai": { "provider": "groq", "mode": "limited", "model": "", "budget_usd": 5.0, "gather_seconds": 90,
+          "advice": "auto", "user_context": "photographer; client shoots, invoices and contracts" },
   "rules": [
     {
       "name": "Study: maths",
@@ -270,7 +295,7 @@ desktidy/
   classifier.py   offline decision engine       content.py      text, OCR, EXIF, code and project detection
   naming.py       smart renaming                folders.py      folder catalog, similarity, pinned folders
   ai.py           compact AI requests           providers.py    Claude, OpenAI, Gemini, Groq, Mistral, Ollama...
-  usage.py        spend, budget, credit
+  usage.py        spend, budget, credit         advice.py       folder overview and organisation advice
   config.py       settings and data files       winapi.py       Task Scheduler, notifications, Recycle Bin
 ```
 

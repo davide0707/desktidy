@@ -71,7 +71,9 @@ def find_duplicate(src: str, folder: str) -> str | None:
     """An identical file already in the destination folder (same size and same content)."""
     try:
         size = os.path.getsize(src)
-        same_size = [e.path for e in os.scandir(folder) if e.is_file() and e.stat().st_size == size]
+        me = os.path.normcase(os.path.abspath(src))
+        same_size = [e.path for e in os.scandir(folder)
+                     if e.is_file() and e.stat().st_size == size and os.path.normcase(e.path) != me]
     except OSError:
         return None
     if not same_size:
@@ -150,6 +152,8 @@ class Service:
         self.questions: queue.Queue = queue.Queue()
         self.asked: set[str] = set()
         self.setup_warned: str | None = None
+        self.ai_hold: dict[str, float] = {}     # files gathered for one AI request: when first ready
+        self.advising = False                   # organisation advice being prepared in the background
         self.state = {"pid": os.getpid(), "version": __version__,
                       "started": datetime.now().isoformat(timespec="seconds"),
                       "date": date.today().isoformat(), "moved_today": 0}
@@ -167,7 +171,9 @@ class Service:
         return bool(entry.stat(follow_symlinks=False).st_file_attributes & HIDDEN_SYSTEM_LINK)
 
     @staticmethod
-    def last_change(path: str, is_dir: bool) -> float:
+    def last_change(path: str, is_dir: bool, enough: float | None = None) -> float:
+        """Latest change of the item (for a folder, of anything inside). Stops at the first change newer than
+        `enough`: a folder still being written is not walked to the end at every pass."""
         st = os.stat(path)
         t = max(st.st_mtime, st.st_ctime)
         if is_dir:
@@ -180,10 +186,12 @@ class Service:
                         t = max(t, s.st_mtime, s.st_ctime)
                     except OSError:
                         return time.time()
+                    if enough is not None and t >= enough:
+                        return t
         return t
 
     def ready(self, path: str, is_dir: bool, wait: int) -> bool:
-        if not self.opts.now and time.time() - self.last_change(path, is_dir) < wait:
+        if not self.opts.now and time.time() - self.last_change(path, is_dir, time.time() - wait) < wait:
             return False
         if not is_dir:
             if any(os.path.exists(path + e) for e in (".part", ".crdownload", ".download")):
@@ -195,7 +203,7 @@ class Service:
     @staticmethod
     def is_kept(path: str) -> bool:
         """Restored by `desktidy undo`: left alone until the user changes it."""
-        kept = config.read_json(config.path("kept"), [])
+        kept = config.read_json_cached(config.path("kept"), [])
         if not kept:
             return False
         key = os.path.normcase(path)
@@ -222,6 +230,7 @@ class Service:
             return []
         done = [] if self.opts.dry_run else self.finish_jobs(cfg)
         pending = self.pending_paths()
+        pinned = folders.active_pinned()
         for_ai = []
         for watched in cfg["watched_folders"]:
             base = cfg.expand(watched["path"])
@@ -234,7 +243,7 @@ class Service:
                     if self.ignored(e, watched):
                         continue
                     is_dir = e.is_dir(follow_symlinks=False)
-                    if is_dir and (not watched.get("include_folders", False) or folders.holds_pinned(e.path)):
+                    if is_dir and (not watched.get("include_folders", False) or folders.holds_pinned(e.path, pinned)):
                         continue  # pinned folders (or folders holding one) are never moved
                     key = os.path.normcase(e.path)
                     st = e.stat()
@@ -252,9 +261,28 @@ class Service:
                                         plan.new_stem or plan.fallback, plan.reason)
                 except Exception as ex:
                     self.error(e.path, ex)
-        if for_ai:
-            done += self.dispatch(for_ai, cfg)
+        ripe = self.gathered(for_ai, cfg)
+        if ripe:
+            done += self.dispatch(ripe, cfg)
         return done
+
+    def gathered(self, for_ai: list[tuple], cfg: config.Config) -> list[tuple]:
+        """Files for the AI wait a little (ai.gather_seconds, 90 by default) so that several share one request:
+        the instructions and the folder list are paid once, and free plans counting requests last longer.
+        They leave together when the oldest has waited enough or a request is full."""
+        from . import ai
+        now = time.time()
+        self.ai_hold = {os.path.normcase(x[0]): self.ai_hold.get(os.path.normcase(x[0]), now) for x in for_ai}
+        if not for_ai:
+            return []
+        wait = cfg.ai.get("gather_seconds", 90)
+        if self.opts.dry_run or len(for_ai) >= ai.MAX_FILES_PER_REQUEST or now - min(self.ai_hold.values()) >= wait:
+            self.ai_hold = {}
+            return for_ai
+        if not ai.ready(cfg, log.info) or usage.files_left_today(cfg) <= 0:  # no AI now: no reason to wait
+            self.ai_hold = {}
+            return for_ai
+        return []
 
     def finish(self, cfg: config.Config, path: str, is_dir: bool, base: str, dest: str | None, reason: str,
                new_stem: str | None, rename_reason: str) -> list[str]:
@@ -286,7 +314,7 @@ class Service:
     # ------------------------------------------------ the AI
     def dispatch(self, items: list[tuple], cfg: config.Config) -> list[str]:
         from . import ai, providers
-        key = ai.ready(cfg, log)
+        key = ai.ready(cfg, log.info)
         allowed = usage.files_left_today(cfg) if key else 0
         done = []
         for path, is_dir, base, _an, d, plan in items[allowed:]:  # beyond the daily limit: offline decision
@@ -301,11 +329,11 @@ class Service:
         for start in range(0, len(work), ai.MAX_FILES_PER_REQUEST):
             chunk = work[start:start + ai.MAX_FILES_PER_REQUEST]
             if instant:
-                answers = ai.ask(chunk, cfg, key, log) or {}
+                answers = ai.ask(chunk, cfg, key, log.info) or {}
                 for n, item in enumerate(chunk, 1):
                     done += self.finish_item(item, answers.get(n), cfg)
                 continue
-            job = ai.submit(chunk, cfg, key, log)
+            job = ai.submit(chunk, cfg, key, log.info)
             if job:
                 data = config.read_json(config.path("jobs"), {"jobs": []})
                 data["jobs"].append(job)
@@ -324,9 +352,13 @@ class Service:
             elif item.dest is None:
                 maybe = f": maybe {folders.label(answer.folder, folders.aliases(cfg))}" if answer.folder else ""
                 reason = f"AI unsure ({answer.confidence}){maybe}"
-        ai_name = answer.name if answer and item.ask_name and answer.name else None
+        from . import ai
+        ai_name = ai.name_for(item, answer)
         new_stem = item.new_stem or ai_name or item.fallback_stem
-        rename_reason = item.rename_reason + ("; name suggested by AI" if ai_name else "")
+        if ai_name and not item.ask_name:
+            rename_reason = "the AI found the name didn't match the content"
+        else:
+            rename_reason = item.rename_reason + ("; name suggested by AI" if ai_name else "")
         return self.finish(cfg, item.path, item.is_dir, item.base, dest, reason, new_stem, rename_reason)
 
     @staticmethod
@@ -346,7 +378,7 @@ class Service:
                 waiting.append(job)
                 continue
             job["polled"] = time.time()
-            finished, answers = ai.collect(job, log) if age_hours < JOB_GIVE_UP_HOURS else (True, None)
+            finished, answers = ai.collect(job, log.info) if age_hours < JOB_GIVE_UP_HOURS else (True, None)
             if not finished:
                 waiting.append(job)
                 continue
@@ -401,6 +433,28 @@ class Service:
             self.asked.add(os.path.normcase(p))
             self.questions.put(p)
 
+    # ------------------------------------------------ organisation advice
+    def maybe_advise(self, cfg: config.Config) -> None:
+        """Once DeskTidy has an overview of your files (ai-only mode, enough files tidied), the AI suggests how to
+        organise them better: prepared in the background about once a week, announced with a notification."""
+        from . import advice
+        if self.opts.dry_run or self.opts.once or self.advising or not advice.due(cfg):
+            return
+        self.advising = True
+
+        def work():
+            try:
+                result = advice.generate(cfg, log.info)
+                if result and result["tips"]:
+                    n = len(result["tips"])
+                    winapi.notify(f"{APP_NAME}: {n} idea{'s' if n > 1 else ''} to organise your files",
+                                  "\n".join(t["title"] for t in result["tips"][:3]) + "\nSee them: desktidy advice")
+            except Exception as ex:
+                log.info(f"ERROR preparing the organisation advice: {ex!r}")
+            finally:
+                self.advising = False
+        threading.Thread(target=work, daemon=True).start()
+
     # ------------------------------------------------ bookkeeping
     def error(self, path: str, ex: Exception) -> None:
         if self.errors.get(path) != repr(ex):  # don't repeat the same error at every pass
@@ -452,8 +506,9 @@ class Service:
                         winapi.notify(f"{APP_NAME}: {len(lines)} item{'s' if len(lines) > 1 else ''} tidied",
                                       "\n".join(lines[:4]) + ("\n..." if len(lines) > 4 else ""))
                     self.suggest_pins(cfg)
+                    self.maybe_advise(cfg)
                 self.save_state(last_pass=datetime.now().isoformat(timespec="seconds"), paused=paused,
-                                ai_pending=len(self.pending_paths()))
+                                ai_pending=len(self.pending_paths()) + len(self.ai_hold))
             except Exception as ex:
                 log.info(f"ERROR: {ex!r}")
                 self.save_state(last_error=f"{datetime.now():%Y-%m-%d %H:%M} {ex}")

@@ -75,6 +75,38 @@ class TestConfig(IsolatedTest):
         self.assertTrue(os.path.exists(config.path("rules")))
         self.assertGreater(len(cfg["rules"]), 20)
 
+    def test_cached_reads_follow_the_file(self):
+        from desktidy import folders
+        p = config.path("kept")
+        config.write_json(p, [1])
+        first = config.read_json_cached(p)
+        self.assertIs(config.read_json_cached(p), first)      # parsed once
+        with open(p, "w", encoding="utf-8") as f:              # changed by another process
+            f.write("[1, 2, 3]")
+        os.utime(p, ns=(1, 1))
+        self.assertEqual(config.read_json_cached(p), [1, 2, 3])
+        os.remove(p)
+        self.assertEqual(config.read_json_cached(p, []), [])
+        self.assertEqual(folders.active_pinned(), [])
+        folders.pin(self.folder("Desktop", "Recipes"))
+        self.assertEqual([x.name for x in folders.active_pinned()], ["Recipes"])
+        folders.unpin(self.folder("Desktop", "Recipes"))
+        self.assertEqual(folders.active_pinned(), [])
+
+    def test_advice_command_works_offline(self):
+        self.config(ai={"mode": "off", "candidate_folders": [{"path": "{D}", "depth": 2}]})
+        os.replace(self.path("_data", "rules.json"), config.path("rules"))
+        self.folder("dest", "Empty_one")
+        out = self._run("advice")
+        self.assertIn("No AI advice yet", out)
+        self.assertIn("Empty_one", out)
+        self.assertIs(cli.find_command("tips"), cli.cmd_advice)
+
+    def _run(self, *argv):
+        with redirect_stdout(io.StringIO()) as out:
+            cli.run(list(argv))
+        return out.getvalue()
+
     def test_update_keeps_a_backup(self):
         config.load_config()
         config.update_config(lambda d: d["ai"].__setitem__("mode", "off"))

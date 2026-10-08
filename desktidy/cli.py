@@ -345,12 +345,21 @@ def cmd_status(args):
     row("AI spend", f"today {usd(u['today_usd'])} ({u['today_files']} files) · total {usd(u['total_usd'])} · "
                     f"budget {usd(cfg.ai.get('budget_usd', 5.0), 2)}")
     if state.get("ai_pending"):
-        row("Waiting for AI", f"{state['ai_pending']} file(s) {C.GR}(batch: usually a few minutes){C.X}")
+        row("Waiting for AI", f"{state['ai_pending']} file(s) {C.GR}(gathered to share one request, or in a "
+                              f"batch: usually a few minutes){C.X}")
     if u.get("warning"):
         row("AI problem", f"{C.Y}{u['warning']['text']}{C.X} {C.GR}({ago(u['warning']['at'])}){C.X}", f"{C.Y}[!]{C.X}")
     elif mode != "off" and key and (block := usage.block_reason(cfg, u)):
         row("AI paused", f"{C.Y}{block}{C.X}", f"{C.Y}[!]{C.X}")
     row("Renaming", f"{config.rename_mode(cfg)} - {config.RENAME_MODES[config.rename_mode(cfg)]}")
+    from . import advice
+    tips = advice.load()
+    if tips.get("tips"):
+        row("Advice", f"{len(tips['tips'])} idea(s) to organise your files, {ago(tips.get('at'))}  "
+                      f"->  {C.W}desktidy advice{C.X}")
+    elif advice.enabled(cfg):
+        row("Advice", f"after {cfg.ai.get('advice_after_files', 30)} tidied files "
+                      f"({advice.moved_count()} so far), or now: {C.W}desktidy advice new{C.X}")
     pinned = folders.load_pinned()["pinned"]
     row("Pinned folders", f"{len(pinned)}" + (f"  ({', '.join(os.path.basename(p['path']) for p in pinned[:5])})"
                                               if pinned else "  (desktidy pinned)"))
@@ -744,7 +753,8 @@ def cmd_explain(args):
     if d.private or an.is_private:
         row("AI", "never: private file, it stays on this PC")
     elif classifier.wants_ai(d, an, cfg):
-        row("AI", f"would be asked (mode {config.ai_mode(cfg)})")
+        check = " and would check that the name fits the content" if naming.ai_may_check(an, plan, cfg) else ""
+        row("AI", f"would be asked (mode {config.ai_mode(cfg)}){check}")
     else:
         row("AI", f"not needed (mode {config.ai_mode(cfg)})")
     if use_ai:
@@ -762,8 +772,11 @@ def cmd_explain(args):
         if answer:
             row(p.name, f"{C.G}{config.short(answer.folder) if answer.folder else 'none fits'}{C.X} "
                         f"{C.GR}({answer.confidence}: {answer.why}){C.X}", f"{C.G}[+]{C.X}")
-            if answer.name:
-                row("Suggested name", answer.name)
+            if ai.name_for(item, answer):
+                row("Suggested name", answer.name + ("" if item.ask_name else
+                                                     f"  {C.GR}(the current name doesn't match the content){C.X}"))
+            elif item.check_name:
+                row("Name", f"{C.G}fits the content{C.X}, kept")
         else:
             warn("No usable answer (desktidy log errors)")
 
@@ -1102,6 +1115,82 @@ def _test_key(key: str | None, cfg) -> bool | None:
     return valid
 
 
+def print_tips(data: dict) -> None:
+    for i, t in enumerate(data.get("tips", []), 1):
+        print(f"\n   {C.W}{i}){C.X} {C.CY}[{t['kind']}]{C.X} {C.BOLD}{t['title']}{C.X}")
+        if t.get("detail"):
+            print(f"      {t['detail']}")
+        for p in t.get("paths", [])[:4]:
+            print(f"      {C.GR}-> {config.short(p)}{C.X}")
+
+
+def cmd_advice(args):
+    """Tips to organise files and folders better: from the AI (automatic in ai-only mode) plus offline findings."""
+    from . import advice
+    sub = args[0].lower() if args else ""
+    cfg = config.load_config()
+    if sub in ("new", "now", "refresh", "ask"):
+        from . import ai, providers
+        p = providers.current(cfg)
+        key = ai.ready(cfg, print, files=False)
+        if not key:
+            fail("The AI is not available: choose a service and a key first (desktidy ai provider · desktidy key)")
+            return
+        price = "free plan" if p.free or p.local else "about $0.005"
+        if (INTERACTIVE or sys.stdin.isatty()) and not confirm(
+                f"Send {p.name} the names of your folders and a few file names (never the content)? ({price})", True):
+            return
+        info("Looking at your folders...")
+        result = advice.generate(cfg, lambda m: hint(m), key)
+        if not result:
+            fail("No usable answer (desktidy log errors)")
+            return
+        data = result
+    elif sub in ("open", "show") and len(args) > 1 or sub.isdigit():
+        n = args[1] if len(args) > 1 else sub
+        tips = advice.load().get("tips", [])
+        tip = tips[int(n) - 1] if n.isdigit() and 1 <= int(n) <= len(tips) else None
+        if not tip or not tip["paths"]:
+            fail(f"Tip {n} has no folder to open")
+            return
+        winapi.open_path(tip["paths"][0])
+        return
+    elif sub == "pin":
+        tips = advice.load().get("tips", [])
+        n = args[1] if len(args) > 1 else ""
+        tip = tips[int(n) - 1] if n.isdigit() and 1 <= int(n) <= len(tips) else None
+        if not tip or not tip["paths"]:
+            fail("Usage: desktidy advice pin <tip number>   (pins the first folder of that tip)")
+            return
+        folders.pin(tip["paths"][0])
+        ok(f"Pinned {C.BOLD}{os.path.basename(tip['paths'][0])}{C.X}")
+        return
+    else:
+        data = advice.load()
+    title("Organisation advice")
+    if data.get("tips"):
+        hint(f"From {data.get('service', 'the AI')} · {data.get('model', '')} · {ago(data.get('at'))}. "
+             "Nothing is changed for you: these are ideas.")
+        print_tips(data)
+    elif sub not in ("new", "now", "refresh", "ask"):
+        if advice.enabled(cfg):
+            need = cfg.ai.get("advice_after_files", 30)
+            info(f"No AI advice yet: it comes by itself once DeskTidy has an overview of your files "
+                 f"({advice.moved_count()}/{need} files tidied). Ask now: {C.W}desktidy advice new{C.X}")
+        else:
+            info(f"No AI advice yet. Ask now: {C.W}desktidy advice new{C.X}  (automatic in mode ai-only)")
+    findings = advice.overview(cfg).findings
+    if findings:
+        print(f"\n  {C.GR}Seen on this PC (offline, now):{C.X}")
+        for f in findings:
+            warn(f)
+    hint("\n  desktidy advice new · advice open <n> (Explorer) · advice pin <n> (pin its folder)")
+    if INTERACTIVE and data.get("tips"):
+        n = ask("Number to open in Explorer (Enter = back):")
+        if n.isdigit():
+            cmd_advice(["open", n])
+
+
 # ================================================================ commands: more
 def cmd_log(args):
     if "open" in args:
@@ -1220,13 +1309,14 @@ COMMANDS = [  # (number, name, function, description, aliases, section)
     (15, "rename", cmd_rename, "smart renaming  (smart · generic · off)", [], "Files"),
     (16, "spend", cmd_spend, "AI spend and balance  (spend credit 4.85 · spend web)", ["cost", "balance", "usage"], "AI"),
     (17, "ai", cmd_ai, "how much AI: off · limited · moderate · ai-only", ["mode"], "AI"),
-    (18, "key", cmd_key, "set the Claude API key  (key test · key remove)", ["apikey"], "AI"),
-    (19, "log", cmd_log, "activity log  (log errors · log 100)", ["errors"], "More"),
-    (20, "rules", cmd_rules, "edit rules.json  (rules check)", ["config", "settings"], "More"),
-    (21, "open", cmd_open, "open the data folder", ["data"], "More"),
-    (22, "install", cmd_install, "add the command and start at sign-in", [], "More"),
-    (23, "uninstall", cmd_uninstall, "remove autostart and the command", [], "More"),
-    (24, "about", cmd_about, "version and author", ["version", "info"], "More"),
+    (18, "key", cmd_key, "API key of the chosen AI service  (key test · key remove)", ["apikey"], "AI"),
+    (19, "advice", cmd_advice, "ideas to organise files and folders better  (advice new)", ["tips", "consigli"], "AI"),
+    (20, "log", cmd_log, "activity log  (log errors · log 100)", ["errors"], "More"),
+    (21, "rules", cmd_rules, "edit rules.json  (rules check)", ["config", "settings"], "More"),
+    (22, "open", cmd_open, "open the data folder", ["data"], "More"),
+    (23, "install", cmd_install, "add the command and start at sign-in", [], "More"),
+    (24, "uninstall", cmd_uninstall, "remove autostart and the command", [], "More"),
+    (25, "about", cmd_about, "version and author", ["version", "info"], "More"),
 ]
 
 
@@ -1267,6 +1357,7 @@ def cmd_help(args):
     desktidy stop                   desktidy ai moderate
     desktidy autostart off          desktidy spend credit 4.85
     desktidy pin pasta recipes      desktidy explain "C:\\Users\\me\\Downloads\\scan0001.pdf"
+    desktidy ai ai-only             desktidy advice new
 
   {C.BOLD}Good to know{C.X}
     {C.GR}- Files and folders whose name starts with ! are never touched ("!draft.docx").

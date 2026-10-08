@@ -101,8 +101,8 @@ def files_left_today(cfg: dict, u: dict | None = None) -> int:
     return max(0, config.daily_limit(cfg) - u["today_files"])
 
 
-def block_reason(cfg: dict, u: dict | None = None) -> str | None:
-    """Why the AI must not be used right now (budget, credit, daily limit), or None."""
+def block_reason(cfg: dict, u: dict | None = None, files: bool = True) -> str | None:
+    """Why the AI must not be used right now (budget, credit, daily file limit when files=True), or None."""
     u = u or read()
     ai = cfg.get("ai", {})
     budget = ai.get("budget_usd", 5.0)
@@ -112,6 +112,6 @@ def block_reason(cfg: dict, u: dict | None = None) -> str | None:
     left = credit_left(u)
     if left is not None and left <= ai.get("credit_reserve_usd", 0.10):
         return f"estimated credit almost gone ({left:.2f} USD) - after a top-up: desktidy spend credit <balance>"
-    if files_left_today(cfg, u) <= 0:
+    if files and files_left_today(cfg, u) <= 0:
         return f"daily limit reached ({u['today_files']}/{config.daily_limit(cfg)} files)"
     return None

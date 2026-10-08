@@ -127,10 +127,11 @@ class TestAIBatch(ServiceTest):
         super().setUp()
         if ai is None:
             self.skipTest("anthropic is not installed")
-        self.cfg = self.config(ai={"mode": "limited", "delivery": "batch",
+        self.cfg = self.config(ai={"mode": "limited", "delivery": "batch", "gather_seconds": 0,
                                    "candidate_folders": [{"path": "{D}", "depth": 2}]})
         self.recipes = self.folder("dest", "Recipes")
         self.submitted = []
+        self.answer = ai.Answer(self.recipes, "high", "Shopping_list", "groceries")
         fakes = [mock.patch.object(ai, "ready", return_value="sk-ant-test"),
                  mock.patch.object(ai, "submit", side_effect=self._submit),
                  mock.patch.object(ai, "collect", side_effect=self._collect)]
@@ -144,7 +145,8 @@ class TestAIBatch(ServiceTest):
                 "folders": [cfg.default_destination, self.recipes], "items": [i.to_dict() for i in items], "polled": 0.0}
 
     def _collect(self, job, log):
-        return True, {1: ai.Answer(self.recipes, "high", "Shopping_list", "groceries")}
+        log("collected")  # the service must hand over a callable, not the Logger object
+        return True, {1: self.answer}
 
     def test_batch_round_trip(self):
         self.write("scan0002.txt", "milk eggs bread butter cheese apples bananas pasta rice tomatoes " * 4)
@@ -174,6 +176,50 @@ class TestAIBatch(ServiceTest):
         self.svc.tick(cfg)
         self.assertEqual(self.submitted, [])
         self.assertTrue(os.path.exists(self.dest("00_Inbox", "To_Sort", "list.txt")))
+
+    def test_files_are_gathered_into_one_request(self):
+        cfg = self.config(ai={"mode": "limited", "delivery": "batch", "gather_seconds": 60,
+                              "candidate_folders": [{"path": "{D}", "depth": 2}]})
+        self.write("a.txt", "milk eggs bread butter " * 10)
+        self.svc.tick(cfg)
+        self.assertEqual(self.submitted, [])                 # waits for company
+        self.write("b.txt", "tomatoes basil olive oil " * 10)
+        self.svc.tick(cfg)
+        self.assertEqual(self.submitted, [])
+        self.assertEqual(len(self.svc.ai_hold), 2)
+        self.svc.ai_hold = {k: t - 61 for k, t in self.svc.ai_hold.items()}
+        self.svc.tick(cfg)                                    # the oldest waited enough: both leave together
+        self.assertEqual([sorted(os.path.basename(i.path) for i in chunk) for chunk in self.submitted],
+                         [["a.txt", "b.txt"]])
+        self.assertEqual(self.svc.ai_hold, {})
+
+    def test_ai_fixes_a_name_that_does_not_match_the_content(self):
+        cfg = self.config(ai={"mode": "ai-only", "delivery": "batch", "gather_seconds": 0,
+                              "candidate_folders": [{"path": "{D}", "depth": 2}]})
+        self.write("holiday_plans.txt", "Buy milk, eggs, bread, butter, cheese, apples and bananas for the week. " * 4)
+        self.answer = ai.Answer(self.recipes, "high", "Weekly_shopping_list", "groceries")
+        self.svc.tick(cfg)
+        self.assertTrue(self.submitted[0][0].check_name)
+        self.assertFalse(self.submitted[0][0].ask_name)
+        self.svc.tick(cfg)
+        self.assertEqual(os.listdir(self.recipes), ["Weekly_shopping_list.txt"])
+        self.assertIn("didn't match the content", service.read_moves()[0]["reason"])
+
+    def test_ai_name_must_be_meaningful_to_replace_the_users_name(self):
+        cfg = self.config(ai={"mode": "ai-only", "delivery": "batch", "gather_seconds": 0,
+                              "candidate_folders": [{"path": "{D}", "depth": 2}]})
+        self.write("holiday_plans.txt", "Buy milk, eggs, bread, butter, cheese, apples and bananas for the week. " * 4)
+        self.answer = ai.Answer(self.recipes, "high", "Document_1", "groceries")   # generic: rejected
+        self.svc.tick(cfg)
+        self.svc.tick(cfg)
+        self.assertEqual(os.listdir(self.recipes), ["holiday_plans.txt"])
+
+    def test_a_name_that_fits_is_not_sent_for_checking(self):
+        cfg = self.config(ai={"mode": "ai-only", "delivery": "batch", "gather_seconds": 0,
+                              "candidate_folders": [{"path": "{D}", "depth": 2}]})
+        self.write("shopping_milk_eggs.txt", "Buy milk, eggs, bread, butter, cheese, apples and bananas. " * 4)
+        self.svc.tick(cfg)
+        self.assertFalse(self.submitted[0][0].check_name)
 
 
 class TestFirstRunSetup(ServiceTest):

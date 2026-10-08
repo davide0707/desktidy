@@ -103,14 +103,45 @@ def to_stem(text: str) -> str:
     return stem.strip("_.-")
 
 
+def _found(term: str, vocabulary: set[str]) -> bool:
+    return term in vocabulary or any(ct.near(term, v) for v in vocabulary if abs(len(v) - len(term)) <= 1)
+
+
 def mismatch(an: ct.Analysis) -> bool:
     """The name has meaningful words, the content is long enough to judge, and none of them appear in it."""
     terms = [t for t in an.name_terms if not GENERIC.match(t)]
     if not terms or an.words < 80:
         return False
     vocabulary = set(an.counts)
-    return not any(t in vocabulary or any(ct.near(t, v) for v in vocabulary if abs(len(v) - len(t)) <= 1)
-                   for t in terms)
+    return not any(_found(t, vocabulary) for t in terms)
+
+
+def name_fits(an: ct.Analysis) -> bool:
+    """At least half of the meaningful words of the name appear in the content: the name clearly fits."""
+    terms = [t for t in dict.fromkeys(an.name_terms) if not GENERIC.match(t)]
+    if not terms:
+        return False
+    vocabulary = set(an.counts)
+    return sum(_found(t, vocabulary) for t in terms) * 2 >= len(terms)
+
+
+def ai_may_check(an: ct.Analysis, plan: RenamePlan, cfg: dict) -> bool:
+    """Whether the AI, when it looks at this file anyway, should also say if the name fits the content.
+    Skipped when the offline engine already has a name, when the name clearly fits (no tokens wasted) and
+    for kinds that are never renamed (folders, code, photos, private files)."""
+    if config.rename_mode(cfg) != "smart" or plan.new_stem or plan.ask_ai:
+        return False
+    if an.is_dir or an.ext not in RENAMABLE or an.is_private or "icon" in an.tags or "code" in an.tags:
+        return False
+    return an.words >= 20 and not name_fits(an)
+
+
+def accept_ai_name(name: str, current_stem: str) -> bool:
+    """An AI name that replaces a name the user gave must be meaningful and really different."""
+    if not name or is_generic(name):
+        return False
+    squash = lambda s: re.sub(r"[\W_]+", "", config.strip_accents(s).lower())  # noqa: E731
+    return squash(name) != squash(current_stem)
 
 
 def plan(an: ct.Analysis, cfg: dict) -> RenamePlan:

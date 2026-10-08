@@ -83,6 +83,23 @@ class TestPlan(IsolatedTest):
     def test_photos_are_never_renamed(self):
         self.assertIsNone(self.plan(self.image("IMG_0001.jpg", 640, 480, exif=True)).new_stem)
 
+    def test_ai_checks_only_names_that_may_not_fit(self):
+        def check(name, text):
+            an = ct.analyze(self.write(name, text), False, {"analysis": {"ocr": False}})
+            return naming.ai_may_check(an, naming.plan(an, self.cfg), self.cfg)
+        shopping = "Buy milk, eggs, bread, butter, cheese, apples and bananas for the week. " * 4
+        self.assertTrue(check("holiday_plans.txt", shopping))            # nothing in common with the content
+        self.assertTrue(check("Report_final.txt", shopping))             # says nothing
+        self.assertFalse(check("shopping_milk_eggs.txt", shopping))      # fits: no tokens spent on it
+        self.assertFalse(check("scan0001.txt", LONG_INVOICE))            # the offline title is used instead
+        self.assertFalse(check("notes.txt", "too short"))                # not enough content to judge
+
+    def test_ai_name_replacing_the_users_name(self):
+        self.assertTrue(naming.accept_ai_name("Weekly_shopping_list", "holiday_plans"))
+        self.assertFalse(naming.accept_ai_name("Document_1", "holiday_plans"))
+        self.assertFalse(naming.accept_ai_name("Holiday_Plans", "holiday plans"))
+        self.assertFalse(naming.accept_ai_name("", "holiday_plans"))
+
     def test_final_name(self):
         self.assertEqual(naming.final_name("scan0001.PDF", "Invoice_2231"), "Invoice_2231.pdf")
         self.assertEqual(naming.final_name("My File (1).txt", None), "My_File.txt")
