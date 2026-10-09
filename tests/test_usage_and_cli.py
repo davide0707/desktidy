@@ -6,6 +6,7 @@ import os
 import unittest
 from contextlib import redirect_stdout
 from datetime import date, datetime, timedelta
+from unittest import mock
 
 from desktidy import cli, config, service, usage
 from tests.helpers import IsolatedTest
@@ -65,20 +66,41 @@ class TestSpend(IsolatedTest):
 
 class TestConfig(IsolatedTest):
     def test_builtin_variables_and_safe_folders(self):
-        cfg = config.Config({"variables": {"DOC": "C:\\mine"}})
-        self.assertTrue(cfg.expand("{DOCS}\\Archive").startswith(self.tmp))   # tests never reach real folders
-        self.assertEqual(config.Config({"variables": {"DOCS": "D:\\docs"}}).expand("{DOCS}\\x"), "D:\\docs\\x")
+        mine = os.path.join(self.tmp, "mine")
+        cfg = config.Config({"variables": {"DOC": mine}})
+        for var in ("HOME", "DOCS", "DOWNLOADS", "DESKTOP", "PICTURES", "VIDEOS", "MUSIC"):
+            self.assertTrue(cfg.expand("{" + var + "}\\x").startswith(self.tmp), var)  # tests never reach real folders
+        docs = os.path.join(self.tmp, "docs")
+        self.assertEqual(config.Config({"variables": {"DOCS": docs}}).expand("{DOCS}\\x"), os.path.join(docs, "x"))
         with self.assertRaises(OSError):
             cfg.folder("{NOPE}\\Archive")
         with self.assertRaises(OSError):
             cfg.folder("relative\\path")
-        self.assertEqual(cfg.folder("{DOC}\\x"), "C:\\mine\\x")
+        self.assertEqual(cfg.folder("{DOC}\\x"), os.path.join(mine, "x"))
+        self.assertEqual(cfg.folder("{DOC}/a/b"), os.path.join(mine, "a", "b"))   # / and \ work on every system
 
     def test_nested_variables(self):
+        base = os.path.join(self.tmp, "base")
         p = self.path("_data", "r.json")
         with open(p, "w", encoding="utf-8") as f:
-            json.dump({"variables": {"A": "C:\\base", "B": "{A}\\sub"}, "rules": []}, f)
-        self.assertEqual(config.load_config(p).expand("{B}\\x"), "C:\\base\\sub\\x")
+            json.dump({"variables": {"A": base, "B": "{A}\\sub"}, "rules": []}, f)
+        self.assertEqual(config.load_config(p).expand("{B}\\x"), os.path.join(base, "sub", "x"))
+
+    def test_windows_style_variables_everywhere(self):
+        with mock.patch.dict(os.environ, {"DESKTIDY_TEST_DIR": self.tmp}):
+            self.assertEqual(config.Config({}).expand("%DESKTIDY_TEST_DIR%\\a"), os.path.join(self.tmp, "a"))
+            self.assertEqual(config.Config({}).expand("$DESKTIDY_TEST_DIR/b"), os.path.join(self.tmp, "b"))
+        if "USERPROFILE" not in os.environ:  # macOS / Linux: a rules.json written on Windows still works
+            self.assertEqual(config.Config({}).expand("%USERPROFILE%\\Documents"),
+                             os.path.join(config.BUILTIN_VARIABLES["HOME"], "Documents"))
+        self.assertEqual(config.Config({}).expand("~"), os.path.expanduser("~"))
+
+    def test_default_rules_work_on_this_system(self):
+        cfg = config.load_config()
+        for w in cfg["watched_folders"]:
+            self.assertTrue(cfg.folder(w["path"]).startswith(self.tmp), w["path"])
+        for r in cfg["rules"]:
+            self.assertTrue(cfg.folder(r["destination"]).startswith(self.tmp), r["destination"])
 
     def test_first_run_creates_rules(self):
         cfg = config.load_config()
@@ -161,6 +183,9 @@ class TestCommands(IsolatedTest):
 
     def test_split_line(self):
         self.assertEqual(cli.split_line('explain "C:\\a b\\c.pdf" --ai'), ["explain", "C:\\a b\\c.pdf", "--ai"])
+        if not cli.system.WINDOWS:  # paths dragged into Terminal: spaces escaped with a backslash, or single quotes
+            self.assertEqual(cli.split_line("explain ~/My\\ File.pdf"), ["explain", "~/My File.pdf"])
+            self.assertEqual(cli.split_line("explain '/tmp/a b.pdf'"), ["explain", "/tmp/a b.pdf"])
 
     def test_pause_and_resume(self):
         self.run_cli("pause", "30m")

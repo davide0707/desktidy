@@ -4,23 +4,32 @@ Thanks for helping! Bug reports, ideas, new rules and pull requests are all welc
 
 ## Getting started
 
-```bat
+```sh
 git clone https://github.com/davide0707/desktidy
 cd desktidy
 python -m venv .venv
-.venv\Scripts\pip install -e ".[ai,dev]"
+.venv/bin/pip install -e ".[ai,dev]"          # Windows: .venv\Scripts\pip install -e ".[ai,dev]"
 ```
 
-Run the checks before opening a pull request:
+Run the checks before opening a pull request (Windows: `.venv\Scripts\...`):
 
-```bat
-.venv\Scripts\python -m unittest discover -s tests -t .
-.venv\Scripts\ruff check .
+```sh
+.venv/bin/python -m unittest discover -s tests -t .
+.venv/bin/ruff check .
 ```
 
-Tests use temporary folders, a temporary `DESKTIDY_HOME` and `{HOME}` / `{DOCS}` pointing inside them; they never
-call the AI or the internet and never touch your real files or registry entries (Explorer menu tests use a test key).
-To try the service without moving anything: `.venv\Scripts\desktidy-service --dry-run --now`.
+Tests use temporary folders, a temporary `DESKTIDY_HOME` and `{HOME}`, `{DOCS}` and the other user folders pointing
+inside them; they never call the AI or the internet and never touch your real files, registry or autostart entries
+(the Explorer menu test uses a test registry key, the Linux menus and autostart tests a temporary folder). The CI runs
+them on Windows, macOS and Linux. To try the service without moving anything:
+`.venv/bin/python -m desktidy.service --dry-run --now`.
+
+## Where the system-specific code lives
+
+Everything that depends on the operating system goes through `desktidy/system.py`, one small interface implemented
+by `winapi.py` (Windows), `macos.py` and `linux.py`, with what macOS and Linux share in `posix.py`. The rest of
+DeskTidy is plain Python: a new feature that needs the system adds one function to the interface, implemented for all
+three (or stepping back quietly where the system can't do it), and a test in `tests/test_platform.py`.
 
 ## Guidelines
 
@@ -31,7 +40,7 @@ To try the service without moving anything: `.venv\Scripts\desktidy-service --dr
   files must stay untouched.
 - **Keep it readable.** Small functions, clear names, a docstring where the *why* isn't obvious.
 - **Never act behind the user's back.** Folder changes show a plan first and can be undone; anything that deletes
-  goes to the Recycle Bin after a confirmation.
+  goes to the Recycle Bin / Trash after a confirmation.
 - Add or update a test for every behaviour change, and a line in `CHANGELOG.md`.
 
 ## Good first issues
@@ -43,15 +52,17 @@ To try the service without moving anything: `.venv\Scripts\desktidy-service --dr
 
 ## Reporting a bug
 
-Open an issue with your Windows version, the output of `desktidy about` and `desktidy log errors`, and, if possible,
-`desktidy explain <file>` for the file that went wrong. Please remove personal paths and names first.
+Open an issue with your system (Windows, macOS or Linux and its version, and the desktop on Linux), the output of
+`desktidy about` and `desktidy log errors`, and, if possible, `desktidy explain <file>` for the file that went wrong.
+Please remove personal paths and names first.
 
 ## Releasing
 
 1. Update `__version__` in `desktidy/__init__.py` and add the section to `CHANGELOG.md` (`## [x.y.z] - date`).
 2. Commit, then tag and push: `git tag vX.Y.Z && git push origin main vX.Y.Z`.
-3. The [release workflow](.github/workflows/release.yml) checks that the tag matches the version, runs the tests,
-   builds the package, publishes it to PyPI and creates the GitHub release with the CHANGELOG section as notes.
+3. The [release workflow](.github/workflows/release.yml) runs the tests on Windows, macOS and Linux, checks that the
+   tag matches the version, builds the package, publishes it to PyPI and creates the GitHub release with the
+   CHANGELOG section as notes.
 
 One-time setup on [pypi.org](https://pypi.org/manage/account/publishing/): add a *pending publisher* for project
 `desktidy`, owner `davide0707`, repository `desktidy`, workflow `release.yml`, environment `pypi`. No token is stored

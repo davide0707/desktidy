@@ -22,7 +22,7 @@ from datetime import datetime
 from . import config, folders
 
 AUTOMATIC = {"merge", "rename", "move", "archive", "create", "pin", "cleanup"}
-DEFAULT_ARCHIVE = "{DOCS}\\Archive"
+DEFAULT_ARCHIVE = "{DOCS}/Archive"
 
 
 @dataclass
@@ -39,8 +39,8 @@ class Plan:
 # ---------------------------------------------------------------- safety
 def protected(cfg: config.Config) -> list[str]:
     home = os.path.expanduser("~")
-    out = [home, os.path.join(home, "Documents"), os.path.join(home, "Desktop"), os.path.join(home, "Downloads"),
-           cfg.default_destination, str(config.data_dir())]
+    out = [home, cfg.default_destination, str(config.data_dir())]
+    out += [cfg.expand("{" + v + "}") for v in ("HOME", "DOCS", "DESKTOP", "DOWNLOADS", "PICTURES", "VIDEOS", "MUSIC")]
     out += [cfg.expand(w["path"]) for w in cfg["watched_folders"]]
     return [os.path.normcase(os.path.abspath(p)) for p in out]
 
@@ -49,7 +49,7 @@ def _refuse(path: str, cfg: config.Config) -> str | None:
     p = os.path.normcase(os.path.abspath(path))
     if not os.path.isdir(path):
         return f"{config.short(path)} does not exist"
-    if os.path.splitdrive(p)[1] in ("\\", "/", ""):
+    if os.path.splitdrive(p)[1] in ("\\", "/", "") or os.path.ismount(path):
         return f"{path} is a drive"
     if p in protected(cfg):
         return f"{config.short(path)} is a folder DeskTidy must not move"
@@ -217,11 +217,11 @@ def _undo(step: dict) -> None:
 
 
 def unexpand(cfg: config.Config, path: str) -> str:
-    """An absolute path written with the variables of rules.json when possible: {DOCS}\\Study rather than
-    C:\\Users\\name\\Documents\\Study (so rules.json stays portable)."""
+    """An absolute path written with the variables of rules.json when possible: {DOCS}/Study rather than
+    C:\\Users\\name\\Documents\\Study or /home/name/Documents/Study (so rules.json stays portable)."""
     best, best_len = path, 0
-    for name in cfg.get("variables", {}):
-        value = cfg.expand("{" + name + "}")
+    for name in [*config.BUILTIN_VARIABLES, *cfg.get("variables", {})]:  # the most specific one wins
+        value = cfg.expand("{" + name + "}").rstrip(os.sep)
         if "{" not in value and config.inside(path, value) and len(value) > best_len:
             best, best_len = "{" + name + "}" + path[len(value):], len(value)
     return best

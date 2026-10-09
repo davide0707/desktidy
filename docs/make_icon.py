@@ -1,4 +1,5 @@
-"""Draws desktidy/icon.ico (Explorer menu, tray, notifications): a folder with a check mark on a rounded square.
+"""Draws desktidy/icon.ico (Windows: Explorer menu, tray, notifications) and desktidy/icon.png (Linux: notifications,
+autostart, file manager menus): a folder with a check mark on a rounded square.
 Run it again only to change the icon:  python docs/make_icon.py"""
 
 import os
@@ -7,6 +8,7 @@ from PIL import Image, ImageDraw
 
 SIZE = 512
 OUT = os.path.join(os.path.dirname(__file__), "..", "desktidy", "icon.ico")
+PNG = os.path.join(os.path.dirname(__file__), "..", "desktidy", "icon.png")
 
 
 def draw() -> Image.Image:
@@ -30,6 +32,7 @@ def draw() -> Image.Image:
 
 
 if __name__ == "__main__":
-    draw().save(OUT, sizes=[(16, 16), (20, 20), (24, 24), (32, 32), (40, 40), (48, 48), (64, 64), (128, 128),
-                            (256, 256)])
-    print("written", os.path.abspath(OUT))
+    icon = draw()
+    icon.save(OUT, sizes=[(16, 16), (20, 20), (24, 24), (32, 32), (40, 40), (48, 48), (64, 64), (128, 128), (256, 256)])
+    icon.resize((256, 256), Image.LANCZOS).save(PNG, optimize=True)
+    print("written", os.path.abspath(OUT), os.path.abspath(PNG))

@@ -1,6 +1,6 @@
-"""DeskTidy: keeps Downloads, Desktop and Documents tidy by understanding what each file is about."""
+"""DeskTidy: keeps Downloads, Desktop and Documents tidy by understanding what each file is about (Windows, macOS, Linux)."""
 
-__version__ = "1.2.0"
+__version__ = "1.3.0"
 __author__ = "Di Filippo Davide"
 
 APP_NAME = "DeskTidy"

@@ -248,12 +248,12 @@ function renderRules() {
        <button class="b" id="rUp" title="Move up">↑</button><button class="b" id="rDown" title="Move down">↓</button>
        <button class="b d" id="rDel">Delete</button></div>
      <ul class="list">${rules.map((r, i) => ({r, i})).filter(({r}) => !filter || JSON.stringify(r).toLowerCase().includes(filter))
-       .map(({r, i}) => `<li data-i="${i}" class="${i === current ? "on" : ""}"><span>${esc(r.name || "(no name)")}${r.private ? ' <span class="tag priv">private</span>' : ""}</span><span class="dest">${esc((r.destination || "").split("\\").pop())}</span></li>`).join("") || '<li class="empty">No rules</li>'}</ul>
+       .map(({r, i}) => `<li data-i="${i}" class="${i === current ? "on" : ""}"><span>${esc(r.name || "(no name)")}${r.private ? ' <span class="tag priv">private</span>' : ""}</span><span class="dest">${esc((r.destination || "").split(/[\\/]/).pop())}</span></li>`).join("") || '<li class="empty">No rules</li>'}</ul>
    </div>
    <div class="card" id="ruleForm"></div></div>`;
   $("#ruleFilter", el).addEventListener("input", () => { const pos = $("#ruleFilter").selectionStart; renderRules(); const f = $("#ruleFilter"); f.focus(); f.setSelectionRange(pos, pos); });
   el.querySelectorAll(".list li[data-i]").forEach(li => li.addEventListener("click", () => { current = Number(li.dataset.i); renderRules(); }));
-  $("#rAdd").onclick = () => { R.rules.splice(current + 1, 0, {name: "New rule", name_words: [], destination: "{DOCS}\\"}); current++; touch(); renderRules(); };
+  $("#rAdd").onclick = () => { R.rules.splice(current + 1, 0, {name: "New rule", name_words: [], destination: "{DOCS}/"}); current++; touch(); renderRules(); };
   $("#rDup").onclick = () => { if (!rules[current]) return; R.rules.splice(current + 1, 0, structuredClone(rules[current])); R.rules[current + 1].name += " (copy)"; current++; touch(); renderRules(); };
   $("#rUp").onclick = () => { if (current > 0) { [R.rules[current - 1], R.rules[current]] = [R.rules[current], R.rules[current - 1]]; current--; touch(); renderRules(); } };
   $("#rDown").onclick = () => { if (current < rules.length - 1) { [R.rules[current + 1], R.rules[current]] = [R.rules[current], R.rules[current + 1]]; current++; touch(); renderRules(); } };
@@ -313,14 +313,14 @@ function renderFolders() {
     if (k === "path") f.path = inp.value; else if (k === "wait") f.wait_seconds = Math.max(0, Number(inp.value || 0)) * 60; else f.include_folders = inp.checked;
     touch(); }));
   el.querySelectorAll("[data-wdel]").forEach(b => b.onclick = () => { R.watched_folders.splice(Number(b.dataset.wdel), 1); touch(); renderFolders(); });
-  $("#wAdd").onclick = () => { (R.watched_folders ||= []).push({path: "{HOME}\\", wait_seconds: 600, include_folders: false}); touch(); renderFolders(); };
+  $("#wAdd").onclick = () => { (R.watched_folders ||= []).push({path: "{HOME}/", wait_seconds: 600, include_folders: false}); touch(); renderFolders(); };
   el.querySelectorAll("[data-vv]").forEach(inp => inp.addEventListener("input", () => { R.variables[inp.dataset.vv] = inp.value; touch(); }));
   el.querySelectorAll("[data-vk]").forEach(inp => inp.addEventListener("change", () => {
     const old = inp.dataset.vk, name = inp.value.trim().toUpperCase().replace(/[^A-Z0-9_]/g, "");
     if (!name || name === old) return; const entries = Object.entries(R.variables).map(([k, v]) => [k === old ? name : k, v]);
     R.variables = Object.fromEntries(entries); touch(); renderFolders(); }));
   el.querySelectorAll("[data-vdel]").forEach(b => b.onclick = () => { delete R.variables[b.dataset.vdel]; touch(); renderFolders(); });
-  $("#vAdd").onclick = () => { let n = "NEW", i = 2; while (R.variables[n]) n = "NEW" + i++; (R.variables ||= {})[n] = "%USERPROFILE%\\"; touch(); renderFolders(); };
+  $("#vAdd").onclick = () => { let n = "NEW", i = 2; while (R.variables[n]) n = "NEW" + i++; (R.variables ||= {})[n] = "{HOME}/"; touch(); renderFolders(); };
   el.querySelectorAll("[data-unpin]").forEach(b => b.onclick = async () => {
     if (!confirm("Unpin " + b.dataset.unpin + "? The folder and its files stay where they are.")) return;
     await api("/api/unpin", {path: b.dataset.unpin}); S.pinned = S.pinned.filter(p => p !== b.dataset.unpin); renderFolders(); });
@@ -333,16 +333,16 @@ function renderExtras() {
     <label class="f">Remind me (days before) <small>comma separated, 0 = on the day</small>
       <input type="text" id="remind" value="${esc((get("deadlines.remind_days") || [7, 1, 0]).join(", "))}"></label>
   </div></div>
-  <div class="card"><h2>Archive</h2><p class="hint">Items untouched for a long time on the Desktop and in the to-sort folder go to Archive\\year.</p><div class="grid">
+  <div class="card"><h2>Archive</h2><p class="hint">Items untouched for a long time on the Desktop and in the to-sort folder go to Archive/year.</p><div class="grid">
     <div>${check("Archive automatically", "archive.enabled", false)}${check("Compress into .zip", "archive.zip", false)}</div>
     ${num("Untouched for (days)", "archive.after_days", "", 7)}
-    ${text("Archive folder", "archive.folder", "", "{DOCS}\\Archive")}
+    ${text("Archive folder", "archive.folder", "", "{DOCS}/Archive")}
   </div></div>
   <div class="card"><h2>Photos from memory cards</h2><p class="hint">When a card with a DCIM folder is plugged in.</p><div class="grid">
     <div>${check("Offer to import", "import.enabled", true)}${check("Import without asking", "import.auto", false)}${check("Delete from the card after copying", "import.delete_after", false)}</div>
-    ${text("Photos go to", "import.photos", "", "{HOME}\\Pictures")}
-    ${text("Videos go to", "import.videos", "", "{HOME}\\Videos")}
-    ${text("Subfolders", "import.pattern", "{year} {month} {day}", "{year}\\{year}-{month}")}
+    ${text("Photos go to", "import.photos", "", "{PICTURES}")}
+    ${text("Videos go to", "import.videos", "", "{VIDEOS}")}
+    ${text("Subfolders", "import.pattern", "{year} {month} {day}", "{year}/{year}-{month}")}
   </div></div>
   <div class="card"><h2>Learning and groups</h2><div class="grid">
     ${num("Corrections needed before proposing a rule", "learn.min_examples", "", 2)}

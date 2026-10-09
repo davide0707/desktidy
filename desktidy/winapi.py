@@ -1,5 +1,6 @@
-"""Windows integration: single instance, files in use, Recycle Bin, notifications, user environment,
-Task Scheduler and console colors. Everything here is a thin wrapper around a Windows API or tool."""
+"""Windows: single instance, files in use, Recycle Bin, notifications, dialogs, the user environment (API keys, PATH),
+Task Scheduler, the registry, known folders, drives, installed programs, the screen and the built-in OCR.
+Everything here is a thin wrapper around a Windows API or tool (see system.py for the shared interface)."""
 
 from __future__ import annotations
 
@@ -8,11 +9,17 @@ import ctypes
 import os
 import re
 import subprocess
+import uuid
 import winreg
 from ctypes import wintypes
+from functools import lru_cache
 
 NO_WINDOW = 0x08000000
 DETACHED = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+HIDDEN_SYSTEM_LINK = 0x2 | 0x4 | 0x400
+AUTOSTART = "Task Scheduler: DeskTidy"
+KEYS_WHERE = "your Windows user environment"
+TASK_NAME = "DeskTidy"
 
 _k32 = ctypes.WinDLL("kernel32", use_last_error=True)
 _k32.CreateFileW.restype = wintypes.HANDLE
@@ -39,6 +46,20 @@ def instance_running(name: str) -> bool:
     return False
 
 
+def instance_pid(name: str) -> int | None:
+    return None  # a mutex has no owner pid: the service writes it in state.json
+
+
+def kill(pid: int, force: bool = False) -> bool:
+    r = subprocess.run(["taskkill", "/pid", str(pid), "/f"], capture_output=True, creationflags=NO_WINDOW)
+    return r.returncode == 0
+
+
+def detached() -> dict:
+    """Popen arguments for a background process without a window."""
+    return {"creationflags": DETACHED | NO_WINDOW, "close_fds": True}
+
+
 def file_in_use(path: str) -> bool:
     """True if another program has the file open (we ask for exclusive read access)."""
     handle = _k32.CreateFileW(path, 0x80000000, 0, None, 3, 0x80, None)
@@ -46,6 +67,11 @@ def file_in_use(path: str) -> bool:
         return True
     _k32.CloseHandle(handle)
     return False
+
+
+def is_hidden(entry: os.DirEntry) -> bool:
+    """Hidden or system file, or a link (reparse point)."""
+    return bool(entry.stat(follow_symlinks=False).st_file_attributes & HIDDEN_SYSTEM_LINK)
 
 
 class _SHFILEOPSTRUCTW(ctypes.Structure):
@@ -131,6 +157,20 @@ def reveal(path: str) -> None:
         subprocess.Popen(f'explorer "{os.path.dirname(path)}"')
 
 
+def edit_file(path: str) -> None:
+    subprocess.Popen(["notepad.exe", path])
+
+
+def new_terminal(argv: list[str], cwd: str) -> bool:
+    """A new console window running argv."""
+    subprocess.Popen(argv, creationflags=subprocess.CREATE_NEW_CONSOLE, cwd=cwd)
+    return True
+
+
+def clear_screen() -> None:
+    os.system("cls")
+
+
 # ---------------------------------------------------------------- user environment
 def _broadcast_environment_change() -> None:
     result = wintypes.DWORD()
@@ -174,12 +214,6 @@ def set_api_key(key: str | None, env: str = "ANTHROPIC_API_KEY") -> None:
     set_user_env(env, key)
 
 
-def mask(key: str | None) -> str:
-    if not key:
-        return "(none)"
-    return key[:12] + "..." + key[-4:] if len(key) > 20 else "***"
-
-
 def path_entries() -> list[str]:
     value, _ = get_user_env("Path")
     return [p for p in value.split(";") if p.strip()]
@@ -204,11 +238,30 @@ def remove_from_path(folder: str) -> bool:
     return True
 
 
+def _bin_dir() -> str:
+    from . import config
+    return config.path("bin")
+
+
+def install_command(argv: list[str]) -> bool:
+    """%LOCALAPPDATA%\\DeskTidy\\bin\\desktidy.cmd, and that folder in the user PATH. True if PATH changed."""
+    folder = _bin_dir()
+    os.makedirs(folder, exist_ok=True)
+    with open(os.path.join(folder, "desktidy.cmd"), "w", encoding="ascii", newline="\r\n") as f:
+        f.write("@echo off\n" + " ".join(f'"{a}"' for a in argv) + " %*\n")
+    return add_to_path(folder)
+
+
+def uninstall_command() -> bool:
+    return remove_from_path(_bin_dir())
+
+
 # ---------------------------------------------------------------- Task Scheduler
-def task_info(name: str) -> dict:
+def task_info(name: str = TASK_NAME) -> dict:
     """{"exists", "enabled", "at_logon", "command"} read from the task XML (the same in every Windows language)."""
     try:
-        r = subprocess.run(["schtasks", "/query", "/tn", name, "/xml"], capture_output=True, timeout=20)
+        r = subprocess.run(["schtasks", "/query", "/tn", name, "/xml"], capture_output=True, timeout=20,
+                           creationflags=NO_WINDOW)
     except (OSError, subprocess.TimeoutExpired):
         return {"exists": None}
     if r.returncode != 0:
@@ -223,17 +276,18 @@ def task_info(name: str) -> dict:
 
 
 def schtasks(name: str, *args: str) -> bool:
-    r = subprocess.run(["schtasks", *args, "/tn", name], capture_output=True, timeout=30)
+    r = subprocess.run(["schtasks", *args, "/tn", name], capture_output=True, timeout=30, creationflags=NO_WINDOW)
     return r.returncode == 0
 
 
-def register_logon_task(name: str, executable: str, workdir: str, start_now: bool = True) -> bool:
+def register_logon_task(name: str, executable: str, workdir: str, start_now: bool = True, arguments: str = "") -> bool:
     """Run `executable` at every sign-in of the current user: normal priority, restarted if it crashes."""
     q = lambda s: "'" + s.replace("'", "''") + "'"  # noqa: E731 - PowerShell single-quoted string
+    extra = f" -Argument {q(arguments)}" if arguments else ""
     script = f"""
 $ErrorActionPreference = 'Stop'
 $user = "$env:USERDOMAIN\\$env:USERNAME"
-$action = New-ScheduledTaskAction -Execute {q(executable)} -WorkingDirectory {q(workdir)}
+$action = New-ScheduledTaskAction -Execute {q(executable)}{extra} -WorkingDirectory {q(workdir)}
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $user
 $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
     -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 5 -RestartInterval (New-TimeSpan -Minutes 1) `
@@ -244,8 +298,34 @@ Register-ScheduledTask -Force -TaskName {q(name)} -Description 'Keeps Downloads,
 {"Start-ScheduledTask -TaskName " + q(name) if start_now else ""}
 """
     r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-EncodedCommand",
-                        base64.b64encode(script.encode("utf-16-le")).decode()], capture_output=True, timeout=60)
+                        base64.b64encode(script.encode("utf-16-le")).decode()], capture_output=True, timeout=60,
+                       creationflags=NO_WINDOW)
     return r.returncode == 0
+
+
+def autostart_info() -> dict:
+    return task_info()
+
+
+def autostart_install(argv: list[str], workdir: str, start_now: bool = True) -> bool:
+    return register_logon_task(TASK_NAME, argv[0], workdir, start_now, subprocess.list2cmdline(argv[1:]))
+
+
+def autostart_enable(on: bool) -> bool:
+    return schtasks(TASK_NAME, "/change", "/enable" if on else "/disable")
+
+
+def autostart_remove() -> bool:
+    return schtasks(TASK_NAME, "/delete", "/f")
+
+
+def autostart_start() -> bool:
+    task = task_info()
+    return bool(task.get("exists") and task.get("enabled")) and schtasks(TASK_NAME, "/run")
+
+
+def autostart_end() -> None:
+    schtasks(TASK_NAME, "/end")
 
 
 # ---------------------------------------------------------------- registry (current user only, no admin rights)
@@ -282,6 +362,51 @@ def reg_delete_tree(path: str) -> bool:
     return True
 
 
+# ---------------------------------------------------------------- data and user folders
+def data_home() -> str:
+    return os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+
+
+class _GUID(ctypes.Structure):
+    _fields_ = [("Data1", ctypes.c_ulong), ("Data2", ctypes.c_ushort), ("Data3", ctypes.c_ushort),
+                ("Data4", ctypes.c_ubyte * 8)]
+
+
+_KNOWN = {"DOCS": ("FDD39AD0-238F-46AF-ADB4-6C85480369C7", "Documents"),
+          "DOWNLOADS": ("374DE290-123F-4565-9164-39C4925E467B", "Downloads"),
+          "DESKTOP": ("B4BFCC3A-DB2C-424C-B029-7FE99A87C641", "Desktop"),
+          "PICTURES": ("33E28130-4E1E-4676-835A-98395C3BC3BB", "Pictures"),
+          "VIDEOS": ("18989B1D-99B5-455B-841C-AB7C74E4DDFC", "Videos"),
+          "MUSIC": ("4BD8D571-6D19-48D3-BE97-422220080E43", "Music")}
+
+
+def _known_folder(guid: str) -> str | None:
+    """SHGetKnownFolderPath: the real place of Documents, Desktop... (OneDrive and moved folders included)."""
+    try:
+        shell32, ole32 = ctypes.windll.shell32, ctypes.windll.ole32
+        shell32.SHGetKnownFolderPath.argtypes = [ctypes.POINTER(_GUID), wintypes.DWORD, wintypes.HANDLE,
+                                                 ctypes.POINTER(ctypes.c_wchar_p)]
+        g = _GUID.from_buffer_copy(uuid.UUID(guid).bytes_le)
+        out = ctypes.c_wchar_p()
+        if shell32.SHGetKnownFolderPath(ctypes.byref(g), 0, None, ctypes.byref(out)) != 0:
+            return None
+        try:
+            return out.value
+        finally:
+            ole32.CoTaskMemFree(out)
+    except (OSError, AttributeError, ValueError):
+        return None
+
+
+@lru_cache(maxsize=1)
+def user_dirs() -> dict[str, str]:
+    home = os.path.expanduser("~")
+    dirs = {"HOME": home}
+    for key, (guid, name) in _KNOWN.items():
+        dirs[key] = _known_folder(guid) or os.path.join(home, name)
+    return dirs
+
+
 # ---------------------------------------------------------------- drives
 _k32.GetDriveTypeW.argtypes = [wintypes.LPCWSTR]
 _k32.GetVolumeInformationW.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD,
@@ -291,7 +416,7 @@ DRIVE_REMOVABLE = 2
 
 
 def removable_drives() -> list[dict]:
-    """Memory cards and USB sticks with a medium inside: [{"letter", "label", "serial", "root"}]."""
+    """Memory cards and USB sticks with a medium inside: [{"id", "name", "label", "serial", "root"}]."""
     _k32.SetErrorMode(0x1 | 0x8000)  # no "insert a disk" dialog for empty card readers
     mask, found = _k32.GetLogicalDrives(), []
     for i in range(26):
@@ -304,11 +429,13 @@ def removable_drives() -> list[dict]:
         label, serial = ctypes.create_unicode_buffer(261), wintypes.DWORD()
         if not _k32.GetVolumeInformationW(root, label, 261, ctypes.byref(serial), None, None, None, 0):
             continue  # no medium
-        found.append({"letter": letter, "label": label.value, "serial": f"{serial.value:08X}", "root": root})
+        found.append({"id": letter, "name": f"{letter}:", "label": label.value, "serial": f"{serial.value:08X}",
+                      "root": root})
     return found
 
 
 # ---------------------------------------------------------------- installed programs and installers
+INSTALLER_EXT = {".exe", ".msi"}
 _UNINSTALL = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"
 
 
@@ -405,3 +532,39 @@ def msi_product(path: str) -> dict:
         msi.MsiCloseHandle(db)
     return {"name": props.get("ProductName", ""), "version": props.get("ProductVersion", ""),
             "company": props.get("Manufacturer", "")}
+
+
+def installer_product(path: str) -> dict:
+    return msi_product(path) if path.lower().endswith(".msi") else exe_product(path)
+
+
+# ---------------------------------------------------------------- screen and OCR
+def screen_sizes() -> set[tuple[int, int]]:
+    """The screen in pixels, at the usual display scaling factors (screenshots are saved at full resolution)."""
+    sizes: set[tuple[int, int]] = set()
+    try:
+        w, h = ctypes.windll.user32.GetSystemMetrics(0), ctypes.windll.user32.GetSystemMetrics(1)
+    except OSError:
+        return sizes
+    for scale in (1, 1.25, 1.5, 1.75, 2, 2.25, 2.5):
+        if (w * scale).is_integer() and (h * scale).is_integer():
+            sizes |= {(int(w * scale), int(h * scale)), (int(h * scale), int(w * scale))}
+    return sizes
+
+
+def ocr(png: str) -> str:
+    """Text recognition with the built-in Windows 10/11 OCR (offline, nothing is sent)."""
+    from . import config
+    script = str(config.PACKAGE_DIR / "ocr_windows.ps1")
+    if not os.path.exists(script):
+        return ""
+    try:
+        r = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+                            "-File", script, "-Path", png], capture_output=True, timeout=60, creationflags=NO_WINDOW)
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    return r.stdout.decode("utf-8", "ignore") if r.returncode == 0 else ""
+
+
+def ocr_engine() -> str | None:
+    return "Windows OCR"

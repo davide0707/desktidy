@@ -9,12 +9,12 @@ import shutil
 import unicodedata
 from pathlib import Path
 
+from . import system
+
 PACKAGE_DIR = Path(__file__).resolve().parent
 DEFAULT_RULES = PACKAGE_DIR / "default_rules.json"
-OCR_SCRIPT = PACKAGE_DIR / "ocr.ps1"
 
-TASK_NAME = "DeskTidy"                      # Windows Task Scheduler entry
-SERVICE_MUTEX = "Local\\DeskTidyService"    # exists while the background service runs
+SERVICE_MUTEX = "Local\\DeskTidyService"    # held while the background service runs (a lock file on macOS/Linux)
 
 _FILES = {
     "rules": "rules.json",          # your settings and rules
@@ -34,7 +34,8 @@ _FILES = {
     "updates": "updates.json",      # the latest version seen on GitHub
     "pause": "PAUSE",               # exists = paused (may contain "until=ISO-TIME")
     "stop": "STOP",                 # exists = the service stops at its next check
-    "bin": "bin",                   # holds desktidy.cmd, added to PATH by "desktidy install"
+    "bin": "bin",                   # Windows: holds desktidy.cmd, added to PATH by "desktidy install"
+    "keys": "keys.json",            # macOS/Linux: API keys, readable only by you (Windows: user environment)
 }
 
 AI_MODES = {  # mode: (what it does, files per day)
@@ -63,16 +64,17 @@ KEYS_URL = "https://platform.claude.com/settings/keys"
 
 # ---------------------------------------------------------------- data files
 def data_dir() -> Path:
-    """%LOCALAPPDATA%\\DeskTidy, or DESKTIDY_HOME when set (tests, portable installs)."""
+    """Where DeskTidy keeps its data, or DESKTIDY_HOME when set (tests, portable installs):
+    Windows %LOCALAPPDATA%\\DeskTidy, macOS ~/Library/Application Support/DeskTidy, Linux ~/.local/share/desktidy."""
     home = os.environ.get("DESKTIDY_HOME")
     if not home:
-        home = os.path.join(os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"), "DeskTidy")
+        home = os.path.join(system.data_home(), "desktidy" if system.LINUX else "DeskTidy")
     return Path(home)
 
 
 def path(name: str) -> str:
     folder = data_dir()
-    folder.mkdir(parents=True, exist_ok=True)
+    folder.mkdir(parents=True, exist_ok=True, mode=0o700)  # private: moves, logs and keys are yours only
     return str(folder / _FILES[name])
 
 
@@ -114,7 +116,29 @@ def write_json(file: str, data, indent: int | None = 1) -> None:
 
 
 # ---------------------------------------------------------------- settings
-BUILTIN_VARIABLES = {"HOME": "%USERPROFILE%", "DOCS": "%USERPROFILE%\\Documents"}  # rules.json may redefine them
+# The user folders, always defined (rules.json may redefine them): {HOME}, {DOCS}, {DOWNLOADS}, {DESKTOP},
+# {PICTURES}, {VIDEOS}, {MUSIC}. They are the real places on every system: Documents moved to OneDrive on Windows,
+# Movies on macOS, Documenti or Scaricati on an Italian Linux desktop.
+BUILTIN_VARIABLES = dict(system.user_dirs())
+
+
+def expandvars(s: str) -> str:
+    """%VAR%, $VAR and ${VAR} on every system, and ~ at the start. Where %USERPROFILE% does not exist (macOS,
+    Linux: a rules.json written on Windows) it is the home folder."""
+    def windows_var(m):
+        value = os.environ.get(m.group(1))
+        if value is None and m.group(1).upper() == "USERPROFILE":
+            value = BUILTIN_VARIABLES.get("HOME")
+        return m.group(0) if value is None else value
+    s = re.sub(r"%([A-Za-z_][A-Za-z0-9_]*)%", windows_var, s)
+    return os.path.expanduser(os.path.expandvars(s))
+
+
+def native(p: str) -> str:
+    """A path written with \\ or / in rules.json, with the separators of this system."""
+    if os.sep == "/":
+        p = p.replace("\\", "/")
+    return os.path.normpath(p)
 
 
 class Config(dict):
@@ -124,13 +148,13 @@ class Config(dict):
         super().__init__(data)
         self.source = source
         merged = {**BUILTIN_VARIABLES, **data.get("variables", {})}
-        self._vars = {k: os.path.expandvars(v) for k, v in merged.items()}
+        self._vars = {k: expandvars(str(v)) for k, v in merged.items()}
 
     def expand(self, p: str) -> str:
-        for _ in range(3):  # variables may use other variables: {YEAR} = {UNI}\...
+        for _ in range(3):  # variables may use other variables: {YEAR} = {UNI}/...
             for k, v in self._vars.items():
                 p = p.replace("{" + k + "}", v)
-        return os.path.normpath(os.path.expandvars(p))
+        return native(expandvars(p))
 
     def folder(self, p: str) -> str:
         """expand() for a folder DeskTidy is about to create or fill: refuses unknown {VARIABLES}, so a typo never
@@ -253,16 +277,15 @@ def clean_name(name: str, is_dir: bool = False) -> str:
 
 
 def short(p: str) -> str:
-    """C:\\Users\\me\\Documents\\x -> Documents\\x, C:\\Users\\me\\x -> ~\\x."""
+    """For the screen: C:\\Users\\me\\Documents\\x -> Documents\\x, /home/me/x -> ~/x."""
     home = os.path.expanduser("~")
-    docs = os.path.join(home, "Documents")
-    if os.path.normcase(p).startswith(os.path.normcase(docs)):
-        return "Documents" + p[len(docs):]
-    if os.path.normcase(p).startswith(os.path.normcase(home)):
-        return "~" + p[len(home):]
+    docs = system.user_dirs()["DOCS"]
+    for base, name in ((docs, os.path.basename(docs)), (home, "~")):
+        if inside(p, base):
+            return name + p[len(base.rstrip(os.sep)):]
     return p
 
 
 def inside(p: str, base: str) -> bool:
     p, base = os.path.normcase(os.path.abspath(p)), os.path.normcase(os.path.abspath(base))
-    return p == base or p.startswith(base.rstrip("\\") + "\\")
+    return p == base or p.startswith(base.rstrip(os.sep) + os.sep)

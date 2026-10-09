@@ -1,18 +1,20 @@
-"""Windows-facing features, tested without touching the real system: installers already installed (fake program
-list), the archive, photo import (a fake memory card), the Explorer menu (written under a test registry key), the
-desktidy: links, the settings editor (a real local server), the tray menu and the update check (no network)."""
+"""System-facing features, tested without touching the real system: installers already installed (fake program
+list), the archive, photo import (a fake memory card), the right-click menu (Windows: under a test registry key;
+Linux: in a temporary folder), the desktidy: links, the settings editor (a real local server), the tray menu and
+the update check (no network)."""
 
 import io
 import json
 import os
 import threading
 import time
+import unittest
 import urllib.error
 import urllib.request
 from datetime import datetime, timedelta
 from unittest import mock
 
-from desktidy import archive, config, editor, explorer, folders, importer, installers, service, tray, updates, winapi
+from desktidy import archive, config, editor, explorer, folders, importer, installers, service, system, tray, updates
 from tests.helpers import IsolatedTest
 
 OLD = time.time() - 60 * 86400
@@ -45,14 +47,29 @@ class TestInstallers(IsolatedTest):
         self.installer("cmake-4.1.2-windows-x86_64.exe")                   # not installed
         self.installer("UltiMaker-Cura-5.13.0-win64.exe")                  # newer than installed: kept
         self.installer("Perplexity Setup 1.6.0.exe", days_old=1)           # just downloaded: kept
-        found = {os.path.basename(c.path): c for c in installers.find(cfg, self.programs)}
+        with mock.patch.object(installers.system, "INSTALLER_EXT", {".exe", ".msi"}):   # Windows installers, anywhere
+            found = {os.path.basename(c.path): c for c in installers.find(cfg, self.programs)}
         self.assertEqual(sorted(found), ["GitHubDesktopSetup-x64.exe", "python-3.12.10-amd64.exe"])
         self.assertEqual(found["python-3.12.10-amd64.exe"].installed, "Python 3.14.0 (64-bit)")
         self.assertFalse(found["python-3.12.10-amd64.exe"].same_version)
-        with mock.patch.object(installers.winapi, "recycle", side_effect=lambda p: os.remove(p) or True):
+        with mock.patch.object(installers.system, "recycle", side_effect=lambda p: os.remove(p) or True):
             files, size = installers.clean(list(found.values()))
         self.assertEqual(files, 2)
         self.assertEqual([m["action"] for m in service.read_moves()], ["RECYCLED", "RECYCLED"])
+
+    def test_mac_and_linux_installers(self):
+        cfg = self.config()
+        self.installer("Firefox 131.0.dmg")
+        self.installer("code_1.95.0-1730153583_amd64.deb")
+        self.installer("zoom_x86_64.rpm")                                   # not installed
+        programs = [{"name": "Firefox", "version": "131.0", "publisher": "org.mozilla.firefox"},
+                    {"name": "code", "version": "1.96.2-1734607745", "publisher": "Microsoft"}]
+        with mock.patch.object(installers.system, "INSTALLER_EXT", {".dmg", ".pkg", ".deb", ".rpm"}), \
+                mock.patch.object(installers.system, "installer_product", return_value={}):
+            found = {os.path.basename(c.path): c for c in installers.find(cfg, programs)}
+        self.assertEqual(sorted(found), ["Firefox 131.0.dmg", "code_1.95.0-1730153583_amd64.deb"])
+        self.assertTrue(found["Firefox 131.0.dmg"].same_version)
+        self.assertFalse(found["code_1.95.0-1730153583_amd64.deb"].same_version)   # 1.96 is installed
 
 
 class TestArchive(IsolatedTest):
@@ -132,20 +149,36 @@ class TestImport(IsolatedTest):
 
     def test_cards(self):
         root = self.card()
-        with mock.patch.object(importer.winapi, "removable_drives",
-                               return_value=[{"letter": "E", "label": "EOS", "serial": "1", "root": root},
-                                             {"letter": "F", "label": "USB", "serial": "2", "root": self.folder("usb")}]):
-            self.assertEqual([c["letter"] for c in importer.cards({})], ["E"])
+        with mock.patch.object(importer.system, "removable_drives",
+                               return_value=[{"id": "E", "name": "E:", "label": "EOS", "serial": "1A2B", "root": root},
+                                             {"id": "F", "name": "F:", "label": "USB", "serial": "3C4D",
+                                              "root": self.folder("usb")}]):
+            self.assertEqual([c["id"] for c in importer.cards({})], ["E"])
+
+    def test_import_from_a_link(self):
+        from desktidy import cli
+        root = self.card()
+        cfg = self.config(**{"import": {"photos": "{D}\\Pictures", "videos": "{D}\\Videos"}})
+        os.replace(cfg.source, config.path("rules"))
+        card = {"id": "1A2B3C4D", "name": "EOS", "label": "EOS", "serial": "1A2B3C4D", "root": root}
+        with mock.patch.object(importer.system, "removable_drives", return_value=[card]), \
+                mock.patch.object(cli.system, "notify"), mock.patch.object(cli, "GUI", True), \
+                mock.patch("sys.stdout", io.StringIO()):
+            cli.run(["url", "desktidy:import?card=1A2B3C4D"])
+        self.assertTrue(os.path.exists(self.dest("Pictures", "2025", "2025-07", "IMG_0001.JPG")))
 
 
+@unittest.skipUnless(system.WINDOWS, "the Explorer menu lives in the Windows registry")
 class TestExplorer(IsolatedTest):
     ROOT = "Software\\DeskTidyTest\\Classes"
 
     def tearDown(self):
+        from desktidy import winapi
         winapi.reg_delete_tree("Software\\DeskTidyTest")
         super().tearDown()
 
     def test_install_and_uninstall(self):
+        from desktidy import winapi
         explorer.install(self.ROOT)
         self.assertTrue(explorer.installed(self.ROOT))
         command = winapi.reg_read(f"{self.ROOT}\\*\\shell\\DeskTidy\\shell\\1tidy\\command")
@@ -155,13 +188,31 @@ class TestExplorer(IsolatedTest):
         self.assertFalse(explorer.installed(self.ROOT))
         self.assertFalse(explorer.uninstall(self.ROOT))
 
+
+class TestLinks(IsolatedTest):
     def test_links_are_checked(self):
         self.assertEqual(explorer.parse_url("desktidy:undo?ids=1a2b3c4d,0f0f0f0f"), ("undo", {"ids": "1a2b3c4d,0f0f0f0f"}))
         self.assertEqual(explorer.parse_url('"desktidy:where"'), ("where", {}))
         self.assertEqual(explorer.parse_url("desktidy:import?drive=E"), ("import", {"drive": "E"}))
+        self.assertEqual(explorer.parse_url("desktidy:import?card=1A2B3C4D"), ("import", {"card": "1A2B3C4D"}))
         for bad in ("desktidy:delete?path=C:\\Windows", "desktidy:open?id=../../x", "desktidy:import?drive=C:\\x",
-                    "http://evil/desktidy:undo", "desktidy:undo?ids=*"):
+                    "http://evil/desktidy:undo", "desktidy:undo?ids=*", "desktidy:import?card=/etc/passwd"):
             self.assertIsNone(explorer.parse_url(bad), bad)
+
+
+class TestLinuxMenus(IsolatedTest):
+    def test_files_for_nautilus_nemo_dolphin(self):
+        files = explorer.linux_menus(self.tmp)
+        names = {os.path.relpath(p, self.tmp).replace(os.sep, "/") for p in files}
+        self.assertIn("nautilus/scripts/DeskTidy/Tidy now", names)
+        self.assertIn("nemo/actions/desktidy-explain.nemo_action", names)
+        self.assertIn("kio/servicemenus/desktidy.desktop", names)
+        script = files[os.path.join(self.tmp, "nautilus", "scripts", "DeskTidy", "Explain")]
+        self.assertTrue(script.startswith("#!/bin/sh"))
+        self.assertIn("terminal explain", script)
+        dolphin = files[os.path.join(self.tmp, "kio", "servicemenus", "desktidy.desktop")]
+        self.assertIn("X-KDE-Submenu=DeskTidy", dolphin)
+        self.assertIn("pin-toggle %f", dolphin)
 
 
 class TestEditor(IsolatedTest):

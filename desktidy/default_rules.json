@@ -1,22 +1,21 @@
 {
   "_house_rules": "Names starting with ! are never touched. Nothing is moved until the house rules are accepted and at least pinned_folders.min_required folders are pinned (desktidy setup). Every move is logged (desktidy where) and can be undone (desktidy undo).",
-  "_how_it_works": "Decision order (all offline, free, nothing sent): 0) PINNED folders; 1) NAME words (exact, then plural/singular, then one typo); 2) CONTENT: content_words (strong), topics (at least min_topics, usually 2-3), recognize (kinds DeskTidy understands: photo, screenshot, icon, scan, code_python, code_c, code_web, code_shell, code_sql, project_code, project_python, project_web, project_stm32, project_kicad, gerber, print_3d, font, installer, photo_folder, audio_folder, video_folder); 3) SIMILARITY with the files already in each folder; 4) FILE TYPE (extensions). Claude is asked only as ai.mode allows. Private rules never leave the PC. Programs only go to {INSTALLERS}. This file reloads by itself.",
+  "_how_it_works": "Decision order (all offline, free, nothing sent): 0) PINNED folders; 1) NAME words (exact, then plural/singular, then one typo); 2) CONTENT: content_words (strong), topics (at least min_topics, usually 2-3), recognize (kinds DeskTidy understands: photo, screenshot, icon, scan, code_python, code_c, code_web, code_shell, code_sql, project_code, project_python, project_web, project_stm32, project_kicad, gerber, print_3d, font, installer, photo_folder, audio_folder, video_folder); 3) SIMILARITY with the files already in each folder; 4) FILE TYPE (extensions). The AI is asked only as ai.mode allows. Private rules never leave the computer. Programs only go to {INSTALLERS}. This file reloads by itself.",
+  "_variables": "Always defined, on Windows, macOS and Linux: {HOME}, {DOCS}, {DOWNLOADS}, {DESKTOP}, {PICTURES}, {VIDEOS}, {MUSIC} (the real user folders, also when they are moved or have another name, e.g. Documenti). Write paths with / (a rules.json written with \\ works too, on every system).",
   "variables": {
-    "HOME": "%USERPROFILE%",
-    "DOCS": "%USERPROFILE%\\Documents",
-    "STUDY": "%USERPROFILE%\\Documents\\01_Study",
-    "INSTALLERS": "%USERPROFILE%\\Documents\\05_Software\\Installers"
+    "STUDY": "{DOCS}/01_Study",
+    "INSTALLERS": "{DOCS}/05_Software/Installers"
   },
   "interval_seconds": 30,
   "watched_folders": [
-    { "path": "{HOME}\\Downloads", "wait_seconds": 120, "include_folders": true },
-    { "path": "{HOME}\\Desktop", "wait_seconds": 600, "include_folders": false },
+    { "path": "{DOWNLOADS}", "wait_seconds": 120, "include_folders": true },
+    { "path": "{DESKTOP}", "wait_seconds": 600, "include_folders": false },
     { "path": "{DOCS}", "wait_seconds": 600, "include_folders": false, "ignore": [] }
   ],
-  "default_destination": "{DOCS}\\00_Inbox\\To_Sort",
+  "default_destination": "{DOCS}/00_Inbox/To_Sort",
   "analysis": { "ocr": true, "similarity": true },
   "rename": { "mode": "smart" },
-  "pinned_folders": { "min_required": 2, "ask": true, "ask_for_new_folders_in": ["{HOME}\\Desktop"], "wait_seconds": 60 },
+  "pinned_folders": { "min_required": 2, "ask": true, "ask_for_new_folders_in": ["{DESKTOP}"], "wait_seconds": 60 },
   "limits": {
     "_note": "files_per_day: how many files DeskTidy may tidy per day, AI or not: a number or \"unlimited\" (desktidy limit 30 | unlimited). The AI has its own limit: ai.max_files_per_day (desktidy ai max 50 | unlimited).",
     "files_per_day": "unlimited"
@@ -24,14 +23,14 @@
   "search": { "_note": "desktidy find <words>: local full-text index of the tidied documents (index.db, never sent anywhere).", "enabled": true, "index_private": true },
   "deadlines": { "_note": "Payment and submission dates found in documents; reminders this many days before (0 = on the day).", "enabled": true, "remind_days": [7, 1, 0] },
   "archive": {
-    "_note": "Items untouched for after_days on the Desktop and in the to-sort folder go to folder\\<year> (desktidy archive on). zip = compress each item.",
-    "enabled": false, "after_days": 180, "folder": "{DOCS}\\Archive", "zip": false,
-    "sources": ["{HOME}\\Desktop", "{DOCS}\\00_Inbox\\To_Sort"]
+    "_note": "Items untouched for after_days on the Desktop and in the to-sort folder go to folder/<year> (desktidy archive on). zip = compress each item.",
+    "enabled": false, "after_days": 180, "folder": "{DOCS}/Archive", "zip": false,
+    "sources": ["{DESKTOP}", "{DOCS}/00_Inbox/To_Sort"]
   },
   "import": {
     "_note": "Memory cards with a DCIM folder: photos and videos copied by date (pattern: {year} {month} {day}). auto = without asking.",
-    "enabled": true, "auto": false, "photos": "{HOME}\\Pictures", "videos": "{HOME}\\Videos",
-    "pattern": "{year}\\{year}-{month}", "delete_after": false
+    "enabled": true, "auto": false, "photos": "{PICTURES}", "videos": "{VIDEOS}",
+    "pattern": "{year}/{year}-{month}", "delete_after": false
   },
   "learn": { "_note": "Corrections (files you moved yourself) needed before a rule is proposed (desktidy learn).", "min_examples": 2 },
   "groups": { "_note": "Files with something in common needed to propose a group of the to-sort pile (desktidy groups).", "min_files": 3 },
@@ -50,44 +49,44 @@
     "max_folders_per_file": 30,
     "user_context": "",
     "candidate_folders": [
-      { "path": "{DOCS}\\00_Inbox", "depth": 1 },
+      { "path": "{DOCS}/00_Inbox", "depth": 1 },
       { "path": "{STUDY}", "depth": 3 },
-      { "path": "{DOCS}\\02_Work", "depth": 2 },
-      { "path": "{DOCS}\\03_Projects", "depth": 2 },
-      { "path": "{DOCS}\\04_Personal", "depth": 2 },
-      { "path": "{DOCS}\\05_Software", "depth": 2 },
-      { "path": "{HOME}\\Videos", "depth": 1 }
+      { "path": "{DOCS}/02_Work", "depth": 2 },
+      { "path": "{DOCS}/03_Projects", "depth": 2 },
+      { "path": "{DOCS}/04_Personal", "depth": 2 },
+      { "path": "{DOCS}/05_Software", "depth": 2 },
+      { "path": "{VIDEOS}", "depth": 1 }
     ]
   },
   "rules": [
     {
       "name": "Installers: electronics",
       "type": "both",
-      "extensions": [".exe", ".msi", ".msix", ".zip", ".7z", ".rar", ".uf2"],
+      "extensions": [".exe", ".msi", ".msix", ".dmg", ".pkg", ".deb", ".rpm", ".appimage", ".zip", ".7z", ".rar", ".uf2"],
       "name_words": ["stm32", "stlink", "st link", "stm32cube", "cubeide", "cubemx", "arduino", "cp210x", "ch340", "ftdi",
                      "multisim", "labview", "ltspice", "kicad", "packet tracer", "rpi pico", "esp32", "esp idf",
                      "platformio", "proteus", "fritzing", "altium", "eagle", "logisim", "quartus", "vivado", "keil",
                      "segger", "jlink", "teraterm", "coolterm"],
-      "destination": "{INSTALLERS}\\Electronics"
+      "destination": "{INSTALLERS}/Electronics"
     },
     {
       "name": "Installers: network and security",
       "type": "both",
-      "extensions": [".exe", ".msi", ".msix", ".zip", ".7z", ".rar"],
+      "extensions": [".exe", ".msi", ".msix", ".dmg", ".pkg", ".deb", ".rpm", ".appimage", ".zip", ".7z", ".rar"],
       "name_words": ["vpn", "nordvpn", "protonvpn", "openvpn", "wireguard", "tailscale", "zerotier", "wireshark", "npcap",
                      "nmap", "zenmap", "mosquitto", "mqttx", "tor browser", "burp", "metasploit", "angry ip",
                      "advanced ip scanner", "filezilla", "winscp", "hashcat", "ghidra"],
-      "destination": "{INSTALLERS}\\Network_and_Security"
+      "destination": "{INSTALLERS}/Network_and_Security"
     },
     {
       "name": "Installers: development",
       "type": "both",
-      "extensions": [".exe", ".msi", ".msix", ".zip", ".7z", ".rar"],
+      "extensions": [".exe", ".msi", ".msix", ".dmg", ".pkg", ".deb", ".rpm", ".appimage", ".zip", ".7z", ".rar"],
       "name_words": ["git", "github cli", "node", "nodejs", "python", "cmake", "vscode", "vs code", "vscodeusersetup",
                      "visual studio", "jetbrains", "pycharm", "intellij", "clion", "sqlite", "db browser", "postman",
                      "dotnet", "jdk", "java", "msys2", "mingw", "llvm", "android studio", "putty", "anaconda",
                      "miniconda", "rustup", "golang", "ollama", "cursor", "notepad"],
-      "destination": "{INSTALLERS}\\Development"
+      "destination": "{INSTALLERS}/Development"
     },
     {
       "name": "Operating systems and virtual machines",
@@ -95,13 +94,13 @@
       "extensions": [".7z", ".zip", ".rar", ".xz", ".gz", ".torrent"],
       "name_words": ["kali", "ubuntu", "debian", "fedora", "linux mint", "archlinux", "arch linux", "hyper v", "vmware",
                      "virtualbox", "win11", "windows 11 iso"],
-      "destination": "{INSTALLERS}\\Virtual_Machines"
+      "destination": "{INSTALLERS}/Virtual_Machines"
     },
     {
       "name": "Portable apps",
       "extensions": [".zip", ".7z", ".rar"],
       "name_words": ["portable", "portabile"],
-      "destination": "{DOCS}\\05_Software\\Portable"
+      "destination": "{DOCS}/05_Software/Portable"
     },
     {
       "name": "Study: maths",
@@ -112,7 +111,7 @@
                  "dimostrazione", "series", "serie", "matrix", "matrice", "eigenvalue", "autovalore", "differential equation",
                  "equazione differenziale", "taylor", "asymptote", "asintoto", "continuity", "continuita"],
       "extensions": [".pdf", ".docx", ".pptx", ".odt", ".txt", ".md", ".png", ".jpg", ".jpeg", ".zip"],
-      "destination": "{STUDY}\\Courses\\Maths"
+      "destination": "{STUDY}/Courses/Maths"
     },
     {
       "name": "Study: programming",
@@ -122,7 +121,7 @@
       "topics": ["algorithm", "algoritmo", "pointer", "puntatore", "variable", "variabile", "loop", "ciclo", "array",
                  "recursion", "ricorsione", "data structure", "struttura dati", "linked list", "compiler", "compilatore",
                  "complexity", "complessita", "sorting", "ordinamento", "pseudocode", "pseudocodice"],
-      "destination": "{STUDY}\\Courses\\Programming"
+      "destination": "{STUDY}/Courses/Programming"
     },
     {
       "name": "Study: exams",
@@ -132,7 +131,7 @@
       "topics": ["exam", "appello", "time allowed", "tempo a disposizione", "student id", "matricola", "surname",
                  "cognome", "points", "punti", "not allowed", "non e consentito"],
       "min_topics": 3,
-      "destination": "{STUDY}\\Exams"
+      "destination": "{STUDY}/Exams"
     },
     {
       "name": "Study: notes and slides",
@@ -142,7 +141,7 @@
       "topics": ["lecture", "lezione", "definition", "definizione", "theorem", "teorema", "example", "esempio",
                  "exercise", "esercizio", "lemma", "corollary", "corollario", "proposition", "proposizione"],
       "min_topics": 3,
-      "destination": "{STUDY}\\Notes"
+      "destination": "{STUDY}/Notes"
     },
     {
       "name": "Study: university admin",
@@ -152,7 +151,7 @@
       "topics": ["enrollment", "immatricolazione", "tuition", "tasse", "student id", "matricola", "scholarship",
                  "borsa di studio", "installment", "rata", "academic year", "anno accademico"],
       "min_topics": 2,
-      "destination": "{STUDY}\\Admin"
+      "destination": "{STUDY}/Admin"
     },
     {
       "name": "CV",
@@ -162,7 +161,7 @@
       "topics": ["work experience", "esperienza lavorativa", "education", "istruzione e formazione", "skills",
                  "competenze", "mother tongue", "lingua madre", "date of birth", "data di nascita"],
       "min_topics": 3,
-      "destination": "{DOCS}\\04_Personal\\CV",
+      "destination": "{DOCS}/04_Personal/CV",
       "private": true
     },
     {
@@ -173,7 +172,7 @@
       "topics": ["passport", "passaporto", "identity card", "carta di identita", "place of birth", "luogo di nascita",
                  "nationality", "cittadinanza", "date of expiry", "data di scadenza", "issued", "rilasciata"],
       "min_topics": 3,
-      "destination": "{DOCS}\\04_Personal\\IDs",
+      "destination": "{DOCS}/04_Personal/IDs",
       "private": true
     },
     {
@@ -184,7 +183,7 @@
       "topics": ["gross pay", "net pay", "retribuzione", "netto in busta", "tax", "irpef", "inps", "deductions",
                  "trattenute", "national insurance", "hours worked", "ore lavorate"],
       "min_topics": 3,
-      "destination": "{DOCS}\\02_Work\\Payslips",
+      "destination": "{DOCS}/02_Work/Payslips",
       "private": true
     },
     {
@@ -194,7 +193,7 @@
       "topics": ["employer", "datore di lavoro", "employee", "lavoratore", "job title", "mansione", "working hours",
                  "orario di lavoro", "probation", "periodo di prova", "salary", "retribuzione"],
       "min_topics": 3,
-      "destination": "{DOCS}\\02_Work",
+      "destination": "{DOCS}/02_Work",
       "private": true
     },
     {
@@ -205,7 +204,7 @@
       "topics": ["invoice", "fattura", "subtotal", "imponibile", "vat", "iva", "amount due", "totale da pagare",
                  "payment", "pagamento", "due date", "scadenza", "customer number", "codice cliente", "kwh"],
       "min_topics": 3,
-      "destination": "{DOCS}\\04_Personal\\Bills_and_Receipts",
+      "destination": "{DOCS}/04_Personal/Bills_and_Receipts",
       "private": true
     },
     {
@@ -215,7 +214,7 @@
       "topics": ["exploit", "vulnerability", "vulnerabilita", "reverse shell", "privilege escalation", "nmap",
                  "metasploit", "ctf", "sql injection", "xss", "password cracking", "wireshark", "kali"],
       "min_topics": 3,
-      "destination": "{DOCS}\\03_Projects\\Security"
+      "destination": "{DOCS}/03_Projects/Security"
     },
     {
       "name": "Projects: web",
@@ -225,7 +224,7 @@
                  "vercel", "netlify", "tailwind", "component", "componente"],
       "min_topics": 3,
       "recognize": ["project_web"],
-      "destination": "{DOCS}\\03_Projects\\Web"
+      "destination": "{DOCS}/03_Projects/Web"
     },
     {
       "name": "Projects: 3D printing",
@@ -235,7 +234,7 @@
                  "infill", "supports", "supporti", "layer height"],
       "min_topics": 3,
       "recognize": ["print_3d"],
-      "destination": "{DOCS}\\03_Projects\\3D_Printing"
+      "destination": "{DOCS}/03_Projects/3D_Printing"
     },
     {
       "name": "Projects: electronics and PCB",
@@ -246,40 +245,40 @@
                  "op amp", "microcontroller", "microcontrollore", "mosfet", "firmware", "uart", "i2c"],
       "min_topics": 3,
       "recognize": ["project_kicad", "gerber", "project_stm32"],
-      "destination": "{DOCS}\\03_Projects\\Electronics"
+      "destination": "{DOCS}/03_Projects/Electronics"
     },
     {
       "name": "AI images",
       "extensions": [".png", ".jpg", ".jpeg", ".webp"],
       "name_words": ["dall e", "dalle", "chatgpt image", "gemini generated", "firefly", "midjourney", "imagefx",
                      "leonardo", "stable diffusion", "ai generated"],
-      "destination": "{DOCS}\\04_Personal\\Images\\AI"
+      "destination": "{DOCS}/04_Personal/Images/AI"
     },
     {
       "name": "Wallpapers and stock images",
       "extensions": [".png", ".jpg", ".jpeg", ".webp"],
       "name_words": ["wallpaper", "sfondo", "sfondi", "background", "4k", "8k", "unsplash", "pexels", "pixabay",
                      "freepik", "shutterstock", "istock"],
-      "destination": "{DOCS}\\04_Personal\\Images\\Wallpapers"
+      "destination": "{DOCS}/04_Personal/Images/Wallpapers"
     },
     {
       "name": "Icons and logos",
       "extensions": [".png", ".jpg", ".jpeg", ".webp", ".svg", ".ico"],
       "name_words": ["logo", "icon", "icona", "icone", "favicon"],
       "recognize": ["icon"],
-      "destination": "{DOCS}\\04_Personal\\Images\\Icons_and_Logos"
+      "destination": "{DOCS}/04_Personal/Images/Icons_and_Logos"
     },
     {
       "name": "Memes",
       "name_words": ["meme", "memes"],
-      "destination": "{DOCS}\\04_Personal\\Images\\Memes"
+      "destination": "{DOCS}/04_Personal/Images/Memes"
     },
     {
       "name": "Screenshots",
       "extensions": [".png", ".jpg", ".jpeg", ".webp"],
       "name_words": ["screenshot", "schermata", "screen shot", "cattura", "snip"],
       "recognize": ["screenshot"],
-      "destination": "{HOME}\\Pictures\\Screenshots",
+      "destination": "{PICTURES}/Screenshots",
       "private": true
     },
     {
@@ -287,37 +286,37 @@
       "extensions": [".jpg", ".jpeg", ".png", ".heic", ".heif", ".webp", ".dng"],
       "name_words": ["whatsapp", "img", "dsc", "pxl", "photo", "foto"],
       "recognize": ["photo", "photo_folder"],
-      "destination": "{DOCS}\\04_Personal\\Photos",
+      "destination": "{DOCS}/04_Personal/Photos",
       "private": true
     },
     {
       "name": "Screen recordings",
       "extensions": [".mp4", ".mkv", ".mov", ".webm"],
       "name_words": ["screen recording", "registrazione dello schermo", "obs"],
-      "destination": "{HOME}\\Videos\\Screen_Recordings"
+      "destination": "{VIDEOS}/Screen_Recordings"
     },
-    { "name": "Installers", "extensions": [".exe", ".msi", ".msix", ".msixbundle", ".appx", ".appxbundle"], "recognize": ["installer"], "destination": "{INSTALLERS}\\Apps" },
-    { "name": "VS Code extensions", "extensions": [".vsix"], "destination": "{INSTALLERS}\\Development" },
-    { "name": "Firmware", "extensions": [".uf2", ".hex"], "destination": "{INSTALLERS}\\Electronics" },
-    { "name": "Disk images", "extensions": [".iso", ".img", ".vhd", ".vhdx", ".ova", ".ovf", ".vmdk", ".qcow2"], "destination": "{INSTALLERS}\\Virtual_Machines" },
-    { "name": "Fonts", "extensions": [".ttf", ".otf", ".woff", ".woff2"], "recognize": ["font"], "destination": "{DOCS}\\05_Software\\Fonts" },
-    { "name": "3D models", "extensions": [".stl", ".gcode", ".3mf", ".obj", ".step", ".stp", ".f3d", ".curaprofile", ".ufp"], "destination": "{DOCS}\\03_Projects\\3D_Printing" },
-    { "name": "Electronics files", "extensions": [".ms14", ".brd", ".sch", ".kicad_pcb", ".kicad_sch", ".kicad_pro", ".gbr", ".drl", ".epro", ".asc", ".ioc", ".fzz"], "destination": "{DOCS}\\03_Projects\\Electronics" },
-    { "name": "Python", "extensions": [".py", ".pyw"], "recognize": ["code_python", "project_python"], "destination": "{DOCS}\\03_Projects\\Code\\Python" },
-    { "name": "Notebooks", "extensions": [".ipynb"], "destination": "{DOCS}\\03_Projects\\Code\\Notebooks" },
-    { "name": "Databases and SQL", "extensions": [".sql", ".db", ".sqlite", ".sqlite3"], "recognize": ["code_sql"], "destination": "{DOCS}\\03_Projects\\Code\\SQL" },
+    { "name": "Installers", "extensions": [".exe", ".msi", ".msix", ".msixbundle", ".appx", ".appxbundle", ".dmg", ".pkg", ".deb", ".rpm", ".appimage", ".flatpakref", ".snap"], "recognize": ["installer"], "destination": "{INSTALLERS}/Apps" },
+    { "name": "VS Code extensions", "extensions": [".vsix"], "destination": "{INSTALLERS}/Development" },
+    { "name": "Firmware", "extensions": [".uf2", ".hex"], "destination": "{INSTALLERS}/Electronics" },
+    { "name": "Disk images", "extensions": [".iso", ".img", ".vhd", ".vhdx", ".ova", ".ovf", ".vmdk", ".qcow2"], "destination": "{INSTALLERS}/Virtual_Machines" },
+    { "name": "Fonts", "extensions": [".ttf", ".otf", ".woff", ".woff2"], "recognize": ["font"], "destination": "{DOCS}/05_Software/Fonts" },
+    { "name": "3D models", "extensions": [".stl", ".gcode", ".3mf", ".obj", ".step", ".stp", ".f3d", ".curaprofile", ".ufp"], "destination": "{DOCS}/03_Projects/3D_Printing" },
+    { "name": "Electronics files", "extensions": [".ms14", ".brd", ".sch", ".kicad_pcb", ".kicad_sch", ".kicad_pro", ".gbr", ".drl", ".epro", ".asc", ".ioc", ".fzz"], "destination": "{DOCS}/03_Projects/Electronics" },
+    { "name": "Python", "extensions": [".py", ".pyw"], "recognize": ["code_python", "project_python"], "destination": "{DOCS}/03_Projects/Code/Python" },
+    { "name": "Notebooks", "extensions": [".ipynb"], "destination": "{DOCS}/03_Projects/Code/Notebooks" },
+    { "name": "Databases and SQL", "extensions": [".sql", ".db", ".sqlite", ".sqlite3"], "recognize": ["code_sql"], "destination": "{DOCS}/03_Projects/Code/SQL" },
     {
       "name": "Code snippets",
       "extensions": [".c", ".cpp", ".h", ".hpp", ".cs", ".java", ".js", ".ts", ".jsx", ".tsx", ".html", ".css", ".json",
                      ".xml", ".yaml", ".yml", ".sh", ".bat", ".ps1", ".ino", ".go", ".rs", ".php", ".toml", ".md"],
       "recognize": ["code_c", "code_web", "code_shell"],
-      "destination": "{DOCS}\\03_Projects\\Code\\Snippets"
+      "destination": "{DOCS}/03_Projects/Code/Snippets"
     },
-    { "name": "Calendar", "extensions": [".ics", ".vcs"], "destination": "{DOCS}\\04_Personal\\Calendar" },
-    { "name": "VPN profiles", "extensions": [".ovpn"], "destination": "{DOCS}\\04_Personal\\Configs\\VPN", "private": true },
-    { "name": "Contacts", "extensions": [".vcf"], "destination": "{DOCS}\\04_Personal\\Contacts", "private": true },
-    { "name": "Camera formats", "extensions": [".heic", ".heif", ".dng"], "destination": "{DOCS}\\04_Personal\\Photos", "private": true },
-    { "name": "Videos", "extensions": [".mp4", ".mov", ".mkv", ".avi", ".webm", ".wmv", ".m4v", ".3gp"], "recognize": ["video_folder"], "destination": "{DOCS}\\04_Personal\\Videos" },
-    { "name": "Audio", "extensions": [".mp3", ".wav", ".m4a", ".flac", ".ogg", ".opus", ".aac", ".wma"], "recognize": ["audio_folder"], "destination": "{DOCS}\\04_Personal\\Music_and_Audio" }
+    { "name": "Calendar", "extensions": [".ics", ".vcs"], "destination": "{DOCS}/04_Personal/Calendar" },
+    { "name": "VPN profiles", "extensions": [".ovpn"], "destination": "{DOCS}/04_Personal/Configs/VPN", "private": true },
+    { "name": "Contacts", "extensions": [".vcf"], "destination": "{DOCS}/04_Personal/Contacts", "private": true },
+    { "name": "Camera formats", "extensions": [".heic", ".heif", ".dng"], "destination": "{DOCS}/04_Personal/Photos", "private": true },
+    { "name": "Videos", "extensions": [".mp4", ".mov", ".mkv", ".avi", ".webm", ".wmv", ".m4v", ".3gp"], "recognize": ["video_folder"], "destination": "{DOCS}/04_Personal/Videos" },
+    { "name": "Audio", "extensions": [".mp3", ".wav", ".m4a", ".flac", ".ogg", ".opus", ".aac", ".wma"], "recognize": ["audio_folder"], "destination": "{DOCS}/04_Personal/Music_and_Audio" }
   ]
 }

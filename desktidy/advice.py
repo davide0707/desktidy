@@ -17,7 +17,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
-from . import config, folders
+from . import config, folders, system
 from . import content as ct
 
 TIPS_MAX = 6
@@ -29,7 +29,7 @@ MAX_CHARS = 20_000          # ~5,000 tokens: the overview is cut down to stay be
 KINDS = ("merge", "split", "rename", "move", "archive", "create", "pin", "naming", "cleanup")
 
 INSTRUCTIONS = (
-    "You are an expert in organising personal files. Below is an overview of the folders on a Windows PC (folder "
+    f"You are an expert in organising personal files. Below is an overview of the folders on {system.MACHINE} (folder "
     "names, file counts and types, a few file names; never file contents) and what an automatic file sorter saw "
     "recently. Suggest at most {n} concrete changes that would make files easier to find and keep tidy: merge "
     "overlapping folders, split overloaded ones, give unclear folders clear names, flatten needless nesting, archive "

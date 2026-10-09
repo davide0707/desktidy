@@ -15,12 +15,13 @@ and asks you to accept them. You can read them any time with `desktidy guide`.
 
 3. **It waits before acting.**
    Downloads are handled 2 minutes after they finish, the Desktop and Documents after 10 minutes. Open files,
-   unfinished downloads, Office lock files (`~$...`), hidden and system files and shortcuts are always skipped.
+   unfinished downloads, Office lock files (`~$...`), hidden and system files, shortcuts and launchers are always
+   skipped.
 
 4. **Nothing is lost.**
    Every move and rename is written to `moves.csv`: `desktidy where <name>` finds any file, `desktidy undo <name>`
-   puts it back with its original name. A file identical to one already in the destination goes to the Recycle Bin,
-   never deleted. Different files with the same name become `name_v2`, `name_v3`...
+   puts it back with its original name. A file identical to one already in the destination goes to the Recycle Bin
+   (the Trash on macOS and Linux), never deleted. Different files with the same name become `name_v2`, `name_v3`...
 
 5. **Private stays private.**
    Files matched by a `private` rule (IDs, payslips, bills, CVs...), photos and screenshots are never sent to the AI.

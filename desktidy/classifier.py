@@ -21,7 +21,9 @@ from dataclasses import dataclass, field
 from . import config, folders
 from . import content as ct
 
-PROGRAMS = {".exe", ".msi", ".msix", ".msixbundle", ".appx", ".appxbundle"}
+PROGRAMS = {".exe", ".msi", ".msix", ".msixbundle", ".appx", ".appxbundle",   # Windows
+            ".dmg", ".pkg",                                                   # macOS
+            ".deb", ".rpm", ".appimage", ".flatpakref", ".snap"}              # Linux
 ARCHIVES = {".zip", ".7z", ".rar"}
 TAG_POINTS = 6.0   # a recognised kind (photo, screenshot, project...) outweighs topics
 THRESHOLD = 3.0    # minimum content score for a decision

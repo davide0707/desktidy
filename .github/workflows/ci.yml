@@ -10,12 +10,16 @@ permissions:
 
 jobs:
   test:
-    name: Tests (Python ${{ matrix.python-version }})
-    runs-on: windows-latest
+    name: ${{ matrix.os }} · Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.12", "3.14"]
+        os: [windows-latest, macos-latest, ubuntu-latest]
+        python-version: ["3.10", "3.14"]
+        include:
+          - os: ubuntu-latest
+            python-version: "3.12"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -28,3 +32,10 @@ jobs:
         run: ruff check .
       - name: Test
         run: python -m unittest discover -s tests -t . -v
+      - name: The commands start
+        run: |
+          desktidy --version
+          desktidy about
+          python -m desktidy.service --dry-run --now --no-ai
+        env:
+          DESKTIDY_HOME: ${{ runner.temp }}/desktidy-home

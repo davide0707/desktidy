@@ -2,7 +2,7 @@
 
 Every file DeskTidy tidies is added to a local full-text index (SQLite FTS5, part of Python): its name, title,
 one-line summary, key terms and up to 20,000 characters of text (OCR included). Existing files are indexed in the
-background once a day (`desktidy find --rebuild` does it now). Everything stays in %LOCALAPPDATA%\\DeskTidy\\index.db:
+background once a day (`desktidy find --rebuild` does it now). Everything stays in index.db, in the data folder:
 nothing is sent anywhere. Words are matched ignoring accents, plural and singular ("bollette" finds "bolletta").
 """
 
@@ -16,10 +16,11 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 
-from . import config
+from . import config, system
 from . import content as ct
 
 BODY_CHARS = 20_000
+_COLLATE = "" if system.LINUX else "COLLATE NOCASE"  # paths: case-sensitive on Linux, not on Windows and macOS
 WEIGHTS = (6.0, 4.0, 4.0, 2.0, 1.0)     # bm25 weight of name, title, summary, keywords, body
 MARK = ("", "")         # around the matched words in a snippet (never found in real text)
 INDEXABLE = ct.DOCUMENT_EXT | ct.TEXT_EXT | ct.HTML_EXT | {".eml", ".epub", ".ipynb", ".rtf"}
@@ -49,7 +50,7 @@ def connect() -> sqlite3.Connection:
     config.data_dir().mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(db_path(), timeout=15)
     con.execute("PRAGMA journal_mode=WAL")
-    con.execute("CREATE TABLE IF NOT EXISTS files (id INTEGER PRIMARY KEY, path TEXT UNIQUE COLLATE NOCASE, "
+    con.execute(f"CREATE TABLE IF NOT EXISTS files (id INTEGER PRIMARY KEY, path TEXT UNIQUE {_COLLATE}, "
                 "size INTEGER, mtime REAL, added TEXT, title TEXT, summary TEXT)")
     if _has_fts5():
         con.execute("CREATE VIRTUAL TABLE IF NOT EXISTS docs USING fts5(name, title, summary, keywords, body, "
@@ -113,10 +114,10 @@ def moved(old: str, new: str) -> None:
 
 def moved_folder(old: str, new: str) -> None:
     """A whole folder moved: every file indexed inside it follows."""
-    old, new = old.rstrip("\\"), new.rstrip("\\")
+    old, new = old.rstrip(os.sep), new.rstrip(os.sep)
     with _lock, _db() as con:
         rows = con.execute("SELECT id, path FROM files WHERE path LIKE ? ESCAPE '|'",
-                           (old.replace("|", "||").replace("%", "|%").replace("_", "|_") + "\\%",)).fetchall()
+                           (old.replace("|", "||").replace("%", "|%").replace("_", "|_") + os.sep + "%",)).fetchall()
         for row_id, path in rows:
             con.execute("UPDATE files SET path = ? WHERE id = ?", (new + path[len(old):], row_id))
 

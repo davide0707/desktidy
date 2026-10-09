@@ -1,8 +1,8 @@
 """Automatic archive: what lies untouched for months on the Desktop or in the to-sort folder goes to
-Archive\\<year> (optionally compressed into a .zip), so the places you look at every day stay clean.
+Archive/<year> (optionally compressed into a .zip), so the places you look at every day stay clean.
 
 Off by default: `desktidy archive on`. Then once a day:
-  * items (files and folders) not changed for archive.after_days (180) are moved to archive.folder\\<year of the
+  * items (files and folders) not changed for archive.after_days (180) are moved to archive.folder/<year of the
     last change>; a folder counts as changed when anything inside it changed
   * never: names starting with "!", shortcuts, hidden and system files, pinned folders (or folders holding one),
     items DeskTidy itself placed there recently, the archive folder itself
@@ -18,16 +18,16 @@ import time
 import zipfile
 from datetime import datetime, timedelta
 
-from . import config, folders
+from . import config, folders, system
 
-DEFAULT = {"enabled": False, "after_days": 180, "folder": "{DOCS}\\Archive", "zip": False, "max_per_run": 200}
-SKIP_EXT = {".lnk", ".url", ".ini", ".tmp", ".crdownload", ".part"}
+DEFAULT = {"enabled": False, "after_days": 180, "folder": "{DOCS}/Archive", "zip": False, "max_per_run": 200}
+SKIP_EXT = {".lnk", ".url", ".desktop", ".webloc", ".ini", ".tmp", ".crdownload", ".part", ".download"}
 
 
 def settings(cfg: dict) -> dict:
     s = {**DEFAULT, **cfg.get("archive", {})}
     if "sources" not in s:
-        s["sources"] = ["{HOME}\\Desktop", cfg.get("default_destination", "")]
+        s["sources"] = ["{DESKTOP}", cfg.get("default_destination", "")]
     return s
 
 
@@ -46,7 +46,7 @@ def _latest_change(path: str, is_dir: bool) -> float:
 
 def candidates(cfg: config.Config, now: float | None = None) -> list[tuple[str, bool, float]]:
     """[(path, is_dir, latest change)] that would be archived now."""
-    from .service import HIDDEN_SYSTEM_LINK, read_moves
+    from .service import IGNORED_NAMES, read_moves
     s = settings(cfg)
     now = now or time.time()
     limit = now - s["after_days"] * 86400
@@ -65,11 +65,11 @@ def candidates(cfg: config.Config, now: float | None = None) -> list[tuple[str, 
         for e in entries:
             try:
                 is_dir = e.is_dir(follow_symlinks=False)
-                if e.name.startswith(("!", ".", "~$")) or e.name.lower() in ("desktop.ini", "thumbs.db"):
+                if e.name.startswith(("!", ".", "~$")) or e.name.lower() in IGNORED_NAMES:
                     continue
                 if not is_dir and os.path.splitext(e.name)[1].lower() in SKIP_EXT:
                     continue
-                if e.stat(follow_symlinks=False).st_file_attributes & HIDDEN_SYSTEM_LINK:
+                if system.is_hidden(e):
                     continue
                 if is_dir and (folders.holds_pinned(e.path, pinned) or config.inside(root, e.path)
                                or config.inside(e.path, root)):
@@ -123,7 +123,7 @@ def archive_one(path: str, is_dir: bool, latest: float, cfg: config.Config) -> t
         return "ARCHIVED_ZIP", target
     action, final = move(path, folder, os.path.basename(path), is_dir)
     if action == "DUPLICATE_TRASHED":  # an identical copy is already archived
-        record(action, path, final, "already in the archive: duplicate sent to the Recycle Bin")
+        record(action, path, final, f"already in the archive: duplicate sent to the {system.TRASH}")
         return action, final
     record("ARCHIVED", path, final, f"untouched since {when}: archived")
     return "ARCHIVED", final

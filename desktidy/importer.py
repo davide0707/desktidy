@@ -1,13 +1,13 @@
 """Photos and videos from a memory card or USB stick: when one with a DCIM folder is plugged in, DeskTidy offers to
 import the new pictures (notification with an "Import" button), sorted by the date they were taken:
-Pictures\\2026\\2026-10\\IMG_2034.jpg, Videos\\2026\\2026-10\\MVI_0042.mp4.
+Pictures/2026/2026-10/IMG_2034.jpg, Videos/2026/2026-10/MVI_0042.mp4 (Movies on macOS).
 
-  desktidy import [E:]          preview, then import (asks first)
+  desktidy import [E: | /Volumes/CARD]   preview, then import (asks first)
   desktidy import auto on|off   import without asking
 
 Safe: files are COPIED (the card is never changed unless import.delete_after is true), each copy is checked by size
 before it counts, and what was already imported (from any card) is skipped. Photos never go to the AI.
-Phones connected by cable (MTP) have no drive letter: copy from them by hand, or use the phone's own app.
+Phones connected by cable (MTP) are not a drive: copy from them by hand, or use the phone's own app.
 """
 
 from __future__ import annotations
@@ -17,14 +17,14 @@ import shutil
 from dataclasses import dataclass
 from datetime import datetime
 
-from . import config, winapi
+from . import config, system
 from . import content as ct
 
 RAW_EXT = {".dng", ".raw", ".cr2", ".cr3", ".nef", ".arw", ".orf", ".rw2", ".raf"}
 PHOTO_EXT = (ct.IMAGE_EXT - {".ico", ".gif", ".bmp"}) | RAW_EXT
 VIDEO_EXT = ct.VIDEO_EXT | {".mts", ".m2ts"}
-DEFAULT = {"enabled": True, "ask": True, "auto": False, "photos": "{HOME}\\Pictures", "videos": "{HOME}\\Videos",
-           "pattern": "{year}\\{year}-{month}", "delete_after": False, "folders": ["DCIM"]}
+DEFAULT = {"enabled": True, "ask": True, "auto": False, "photos": "{PICTURES}", "videos": "{VIDEOS}",
+           "pattern": "{year}/{year}-{month}", "delete_after": False, "folders": ["DCIM"]}
 
 
 @dataclass
@@ -88,14 +88,14 @@ def new_media(root: str, cfg: dict) -> list[Media]:
 def cards(cfg: dict) -> list[dict]:
     """Removable drives with a DCIM (or configured) folder."""
     names = settings(cfg)["folders"]
-    return [d for d in winapi.removable_drives() if any(os.path.isdir(os.path.join(d["root"], n)) for n in names)]
+    return [d for d in system.removable_drives() if any(os.path.isdir(os.path.join(d["root"], n)) for n in names)]
 
 
 def target_for(m: Media, cfg: config.Config) -> str:
     s = settings(cfg)
     base = cfg.folder(s["videos"] if m.video else s["photos"])
     sub = s["pattern"].format(year=m.taken.year, month=f"{m.taken.month:02d}", day=f"{m.taken.day:02d}")
-    return os.path.join(base, sub)
+    return os.path.join(base, config.native(sub))
 
 
 def run(root: str, cfg: config.Config, progress=None) -> dict:

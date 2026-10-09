@@ -3,6 +3,39 @@
 All notable changes to DeskTidy are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/)
 and the project uses [Semantic Versioning](https://semver.org/).
 
+## [1.3.0] - 2026-10-09
+
+### Added
+- **macOS and Linux**, with the same engine, commands and tools as on Windows. Everything that depends on the system
+  goes through one small interface (`system.py`) implemented for Windows, macOS and Linux:
+  - start at sign-in: a launchd agent on macOS (restarted after a crash, not after `desktidy stop`), the desktop's
+    autostart on Linux, or a systemd user service where there is no desktop;
+  - OCR: the Vision framework on macOS, Tesseract on Linux (when installed);
+  - the Trash: `trash` / Foundation on macOS (*Put Back* works), the freedesktop.org Trash specification on Linux;
+  - notifications: osascript (clickable with terminal-notifier) on macOS, `notify-send` with working buttons on Linux;
+    "Pin it?" dialogs with osascript, zenity or kdialog;
+  - right-click menu on Linux: Files (Nautilus) scripts, Nemo actions and a Dolphin service menu;
+  - installers already installed: `.dmg` / `.pkg` against `/Applications` on macOS, `.deb` / `.rpm` against dpkg,
+    rpm and Flatpak on Linux (the `.deb` control file is read without dpkg);
+  - memory cards in `/Volumes` and `/media`; files in use found with `lsof` and `/proc`; API keys in a `keys.json`
+    readable only by you; the `desktidy` command in `~/.local/bin`; `sh install.sh` for source installs.
+- **The real user folders** as built-in variables on every system: `{DOWNLOADS}`, `{DESKTOP}`, `{PICTURES}`,
+  `{VIDEOS}` and `{MUSIC}` next to `{HOME}` and `{DOCS}` (Windows known folders, so Documents moved to OneDrive is
+  found; `user-dirs.dirs` on Linux, so `Documenti` and `Scaricati` are found).
+- `desktidy status` shows the OCR engine; `desktidy about` the system.
+- The CI runs the tests on Windows, macOS and Linux.
+
+### Changed
+- Paths in `rules.json` may be written with `/` or `\` on every system, and `%USERPROFILE%` works on macOS and Linux
+  too: a `rules.json` written on Windows keeps working. The bundled rules use `/` and the new variables.
+- Programs for every system (`.dmg`, `.pkg`, `.deb`, `.rpm`, `.AppImage`...) only go to the installers folder.
+- Shortcuts and launchers (`.desktop`, `.webloc`) and system files of macOS and Linux (`.DS_Store`, `.directory`) are
+  never tidied; on macOS and Linux dot files count as hidden.
+- A move to another disk is detected by the disk itself (also on macOS and Linux), and an unexpected "different
+  device" error falls back to the checked copy.
+- `desktidy stop` asks the service to finish with a signal as well (launchd, systemd and logout stop it cleanly).
+- Mount points and every user folder are refused by `advice apply`, like drive roots.
+
 ## [1.2.0] - 2026-10-09
 
 ### Added

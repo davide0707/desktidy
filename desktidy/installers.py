@@ -1,13 +1,14 @@
-"""Installers you no longer need: setup files (.exe, .msi) of programs that are already installed, in the same or a
-newer version. They are often hundreds of megabytes each.
+"""Installers you no longer need: setup files of programs that are already installed, in the same or a newer
+version (.exe and .msi on Windows, .dmg and .pkg on macOS, .deb and .rpm on Linux). Often hundreds of MB each.
 
   desktidy installers          what could go, and how much space it frees
-  desktidy installers clean    send them to the Recycle Bin (after you confirm; restore them from there)
+  desktidy installers clean    send them to the Trash (after you confirm; restore them from there)
 
-How: the product name and version are read from the installer itself (its version resource, or the MSI Property
-table) and from its file name, and compared with the programs listed in Windows "Installed apps". An installer
-newer than the installed program is kept (it may be the update you have not run yet), and so is anything
-downloaded in the last 7 days.
+How: the product name and version are read from the installer itself when the system allows it (the version
+resource of an .exe, the MSI Property table, the control file of a .deb, rpm) and from its file name, and compared
+with the installed programs (Windows "Installed apps", the apps in /Applications, dpkg / rpm / Flatpak packages).
+An installer newer than the installed program is kept (it may be the update you have not run yet), and so is
+anything downloaded in the last 7 days.
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ import re
 import time
 from dataclasses import dataclass
 
-from . import config, content, winapi
+from . import config, content, system
 
 MIN_BYTES = 1_000_000
 RECENT_DAYS = 7
@@ -25,7 +26,8 @@ NOISE = {"setup", "installer", "install", "x64", "x86", "win64", "win32", "amd64
          "windows", "win", "release", "latest", "stable", "full", "offline", "online", "web", "msi", "exe",
          "portable", "the", "for", "and", "inc", "llc", "ltd", "corporation", "corp", "gmbh", "software",
          "technologies", "foundation", "pbc", "by", "version", "edition", "update", "package", "en", "us", "it",
-         "multilingual", "lang", "machine", "wide"}
+         "multilingual", "lang", "machine", "wide", "linux", "deb", "rpm", "dmg", "pkg", "darwin", "mac", "macos",
+         "osx", "universal", "intel", "aarch64", "noarch", "current", "el8", "el9", "el10"}
 VERSION = re.compile(r"(?<![\d.])(\d+(?:\.\d+){1,3})(?![\d.])")
 
 
@@ -80,15 +82,15 @@ def similarity(installer_names: list[str], program: str) -> float:
 
 
 def _installer_like(path: str, product: dict, in_installers_folder: bool) -> bool:
-    if path.lower().endswith(".msi") or in_installers_folder:
-        return True
+    if not path.lower().endswith(".exe") or in_installers_folder:
+        return True  # .msi, .dmg, .pkg, .deb, .rpm are installers by nature
     text = (os.path.basename(path) + " " + product.get("name", "")).lower()
     return bool(re.search(r"setup|install", text))
 
 
 def find(cfg: config.Config, programs: list[dict] | None = None) -> list[Candidate]:
     """Installers whose program is installed in the same or a newer version."""
-    programs = winapi.installed_programs() if programs is None else programs
+    programs = system.installed_programs() if programs is None else programs
     roots = [(cfg.expand(w["path"]), False) for w in cfg["watched_folders"]]
     if cfg.installer_dir:
         roots.insert(0, (cfg.expand("{INSTALLERS}"), True))
@@ -102,7 +104,7 @@ def find(cfg: config.Config, programs: list[dict] | None = None) -> list[Candida
             for f in files:
                 path = os.path.join(folder, f)
                 ext = os.path.splitext(f)[1].lower()
-                if ext not in (".exe", ".msi") or f.startswith("!") or os.path.normcase(path) in seen:
+                if ext not in system.INSTALLER_EXT or f.startswith("!") or os.path.normcase(path) in seen:
                     continue
                 seen.add(os.path.normcase(path))
                 try:
@@ -112,7 +114,7 @@ def find(cfg: config.Config, programs: list[dict] | None = None) -> list[Candida
                 if st.st_size < MIN_BYTES or st.st_mtime > recent:
                     continue
                 try:
-                    product = winapi.msi_product(path) if ext == ".msi" else winapi.exe_product(path)
+                    product = system.installer_product(path)
                 except OSError:
                     product = {}
                 if not _installer_like(path, product, is_installers):
@@ -133,12 +135,12 @@ def find(cfg: config.Config, programs: list[dict] | None = None) -> list[Candida
 
 
 def clean(candidates: list[Candidate]) -> tuple[int, int]:
-    """Send them to the Recycle Bin, logging each one. Returns (files, bytes)."""
+    """Send them to the Trash, logging each one. Returns (files, bytes)."""
     from .service import record
     files = size = 0
     for c in candidates:
-        if os.path.exists(c.path) and not winapi.file_in_use(c.path) and winapi.recycle(c.path):
-            record("RECYCLED", c.path, "Recycle Bin", f"installer of {c.installed} {c.installed_version} (installed)")
+        if os.path.exists(c.path) and not system.file_in_use(c.path) and system.recycle(c.path):
+            record("RECYCLED", c.path, system.TRASH, f"installer of {c.installed} {c.installed_version} (installed)")
             files, size = files + 1, size + c.size
     return files, size
 

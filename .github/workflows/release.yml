@@ -1,9 +1,9 @@
 name: Release
 
-# Push a tag like v1.2.0 (equal to desktidy.__version__): tests run, the package is built and published to PyPI
-# with Trusted Publishing (no token stored anywhere), and a GitHub release is created with the CHANGELOG section.
-# One-time setup on pypi.org: Publishing -> add a "pending publisher" for project "desktidy", owner "davide0707",
-# repository "desktidy", workflow "release.yml", environment "pypi".
+# Push a tag like v1.3.0 (equal to desktidy.__version__): the tests run on Windows, macOS and Linux, the package is
+# built and published to PyPI with Trusted Publishing (no token stored anywhere), and a GitHub release is created
+# with the CHANGELOG section. One-time setup on pypi.org: Publishing -> add a "pending publisher" for project
+# "desktidy", owner "davide0707", repository "desktidy", workflow "release.yml", environment "pypi".
 
 on:
   push:
@@ -13,27 +13,39 @@ permissions:
   contents: read
 
 jobs:
+  test:
+    name: Tests on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: python -m pip install -e ".[ai,dev]"
+      - name: Lint
+        run: ruff check .
+      - name: Test
+        run: python -m unittest discover -s tests -t .
+
   build:
-    name: Test and build
-    runs-on: windows-latest
+    name: Build
+    needs: test
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - name: The tag matches the version
-        shell: pwsh
         run: |
-          $version = python -c "import re; print(re.search(r'__version__ = \"(.+?)\"', open('desktidy/__init__.py').read()).group(1))"
-          if ("v$version" -ne "${{ github.ref_name }}") { throw "tag ${{ github.ref_name }} but __version__ is $version" }
-      - name: Install
-        run: python -m pip install -e ".[ai,dev]" build
-      - name: Lint
-        run: ruff check .
-      - name: Test
-        run: python -m unittest discover -s tests -t .
+          version=$(python -c "import desktidy; print(desktidy.__version__)")
+          test "v$version" = "${{ github.ref_name }}" || { echo "tag ${{ github.ref_name }} but __version__ is $version"; exit 1; }
       - name: Build
-        run: python -m build
+        run: python -m pip install build && python -m build
       - uses: actions/upload-artifact@v4
         with:
           name: dist

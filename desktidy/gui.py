@@ -1,4 +1,4 @@
-"""Entry point without a console window (desktidyw.exe): used by the Explorer menu, the notification buttons and
+"""Entry point without a console window (desktidyw): used by the right-click menu, the notification buttons and
 the tray icon. Same commands as `desktidy`; results are shown as notifications, errors in a message box."""
 
 from .cli import main_gui

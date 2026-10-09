@@ -15,7 +15,7 @@ import time
 from collections import Counter
 from datetime import date
 
-from . import config
+from . import config, system
 from . import content as ct
 from .config import inside
 
@@ -26,7 +26,8 @@ PROJECT_MARKERS = {".git", "package.json", ".project", "pyvenv.cfg", "requiremen
                    "makefile", "pyproject.toml"}
 GENERIC_WORDS = {"nuova", "nuovo", "cartella", "new", "folder", "file", "files", "varie", "vari", "altro", "altri",
                  "misc", "temp", "tmp", "copia", "copy", "backup", "roba", "cose", "stuff", "documenti", "doc", "docs"}
-DEFAULT_FOLDER_NAMES = re.compile(r"^(nuova cartella|new folder)( \(\d+\))?$", re.I)
+DEFAULT_FOLDER_NAMES = re.compile(r"^(?:nuova cartella|new folder|untitled folder|cartella senza titolo|senza titolo|"
+                                  r"neuer ordner|nouveau dossier|nueva carpeta)(?: \(\d+\)| \d+)?$", re.I)
 
 
 # ---------------------------------------------------------------- candidate destinations
@@ -59,7 +60,7 @@ def candidate_folders(cfg: config.Config, rule_destinations: list[str], default:
                         continue
                     if n.endswith(LOOKS_LIKE_FILE) or parent.startswith(n) or inside(e.path, config.data_dir()):
                         continue  # "x\x" extracted twice, folders named like a file, our own data
-                    if e.stat(follow_symlinks=False).st_file_attributes & 0x406:  # hidden / system / link
+                    if system.is_hidden(e):  # hidden / system / link
                         continue
                 except OSError:
                     continue
@@ -72,7 +73,7 @@ def candidate_folders(cfg: config.Config, rule_destinations: list[str], default:
 
 def aliases(cfg: config.Config) -> list[tuple[str, str]]:
     home = os.path.expanduser("~")
-    result = [(os.path.join(home, "Documents"), ""), (home, "~")]
+    result = [(cfg.expand("{DOCS}"), ""), (home, "~")]
     for var, label in (("{INSTALLERS}", "Installers"),):
         p = cfg.expand(var)
         if "{" not in p:
@@ -84,9 +85,9 @@ def label(p: str, alias_list=()) -> str:
     for base, name in alias_list:
         if os.path.normcase(p) == os.path.normcase(base):
             return name or p
-        if os.path.normcase(p).startswith(os.path.normcase(base) + "\\"):
-            rest = p[len(base) + 1:]
-            return f"{name}\\{rest}" if name else rest
+        if os.path.normcase(p).startswith(os.path.normcase(base).rstrip(os.sep) + os.sep):
+            rest = p[len(base.rstrip(os.sep)) + 1:]
+            return os.path.join(name, rest) if name else rest
     return p
 
 
@@ -375,7 +376,7 @@ def suggestions(cfg: config.Config, include_seen: bool = False, wait: bool = Tru
     (not "New folder") and at least pinned_folders.wait_seconds old. On the very first run, the folders that
     already exist are only remembered, not suggested."""
     options = cfg.get("pinned_folders", {})
-    roots = [cfg.expand(p) for p in options.get("ask_for_new_folders_in", ["{HOME}\\Desktop"])]
+    roots = [cfg.expand(p) for p in options.get("ask_for_new_folders_in", ["{DESKTOP}"])]
     min_age = options.get("wait_seconds", 60) if wait else 0
     d = load_pinned()
     known = {os.path.normcase(p) for p in d["never_ask"] + ([] if include_seen else d["seen"])} | \
@@ -390,7 +391,7 @@ def suggestions(cfg: config.Config, include_seen: bool = False, wait: bool = Tru
             try:
                 if not e.is_dir(follow_symlinks=False) or e.name.startswith((".", "!", "$", "~")):
                     continue
-                if e.stat(follow_symlinks=False).st_file_attributes & 0x406 or DEFAULT_FOLDER_NAMES.match(e.name):
+                if system.is_hidden(e) or DEFAULT_FOLDER_NAMES.match(e.name):
                     continue
                 if os.path.normcase(e.path) in known or time.time() - e.stat().st_ctime < min_age:
                     continue

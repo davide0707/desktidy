@@ -16,7 +16,7 @@ class TestDecisions(IsolatedTest):
     def where(self, p):
         an = ct.analyze(p, os.path.isdir(p), self.cfg)
         d = classifier.decide(p, os.path.isdir(p), self.cfg, an)
-        return (os.path.relpath(d.dest, self.dest()) if d.dest else None), d.reason
+        return (os.path.relpath(d.dest, self.dest()).replace(os.sep, "\\") if d.dest else None), d.reason
 
     def test_name(self):
         self.assertEqual(self.where(self.write("Calculus - exam.txt", "x"))[0], "Study\\Maths")

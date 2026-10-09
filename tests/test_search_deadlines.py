@@ -35,7 +35,7 @@ class TestLimits(IsolatedTest):
         for name in ("calculus 1.txt", "calculus 2.txt", "calculus 3.txt"):
             self.write(name, "x")
         svc = service.Service(service.Options())
-        with mock.patch.object(service.winapi, "notify") as notify:
+        with mock.patch.object(service.system, "notify") as notify:
             svc.tick(cfg)
             self.assertEqual(len(os.listdir(os.path.join(self.tmp, "in"))), 1)   # 2 tidied, 1 waits
             svc.tick(cfg)
@@ -83,7 +83,7 @@ class TestIndex(IsolatedTest):
         due = date.today() + timedelta(days=20)
         cfg = self.config()
         self.write("scan0007.txt", BILL.format(due=due.strftime("%d/%m/%Y")))
-        with mock.patch.object(service.winapi, "notify"):
+        with mock.patch.object(service.system, "notify"):
             service.Service(service.Options()).tick(cfg)
         final = service.read_moves()[0]["destination"]
         self.assertEqual(index.search("bolletta")[0].path, final)

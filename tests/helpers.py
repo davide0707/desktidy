@@ -10,6 +10,11 @@ import zipfile
 from desktidy import config
 
 
+def native(p: str) -> str:
+    """Test paths are written Windows-style ("dest\\Study\\Maths"): this system's separators."""
+    return p.replace("\\", os.sep)
+
+
 class IsolatedTest(unittest.TestCase):
     """Every test gets its own DESKTIDY_HOME: logs, spend and pinned folders never touch the real ones."""
 
@@ -17,10 +22,12 @@ class IsolatedTest(unittest.TestCase):
         self.tmp = tempfile.mkdtemp(prefix="desktidy_test_")
         self._home = os.environ.get("DESKTIDY_HOME")
         os.environ["DESKTIDY_HOME"] = os.path.join(self.tmp, "_data")
-        # {HOME} and {DOCS} point inside the test folder too: no test may ever reach the real user folders
+        # {HOME}, {DOCS}, {DESKTOP}... point inside the test folder too: no test may ever reach the real user folders
         self._builtins = dict(config.BUILTIN_VARIABLES)
-        config.BUILTIN_VARIABLES.update(HOME=os.path.join(self.tmp, "home"),
-                                        DOCS=os.path.join(self.tmp, "home", "Documents"))
+        home = os.path.join(self.tmp, "home")
+        config.BUILTIN_VARIABLES.update(HOME=home, **{k: os.path.join(home, v) for k, v in (
+            ("DOCS", "Documents"), ("DOWNLOADS", "Downloads"), ("DESKTOP", "Desktop"), ("PICTURES", "Pictures"),
+            ("VIDEOS", "Videos"), ("MUSIC", "Music"))})
 
     def tearDown(self):
         config.BUILTIN_VARIABLES.clear()
@@ -32,12 +39,12 @@ class IsolatedTest(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def path(self, *parts):
-        p = os.path.join(self.tmp, *parts)
+        p = os.path.join(self.tmp, *map(native, parts))
         os.makedirs(os.path.dirname(p), exist_ok=True)
         return p
 
     def folder(self, *parts):
-        p = os.path.join(self.tmp, *parts)
+        p = os.path.join(self.tmp, *map(native, parts))
         os.makedirs(p, exist_ok=True)
         return p
 

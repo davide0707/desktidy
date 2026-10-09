@@ -22,8 +22,8 @@ class ServiceTest(IsolatedTest):
         super().setUp()
         self.cfg = self.config()
         self.trashed = []
-        patches = [mock.patch.object(service.winapi, "recycle", side_effect=self._recycle),
-                   mock.patch.object(service.winapi, "notify")]
+        patches = [mock.patch.object(service.system, "recycle", side_effect=self._recycle),
+                   mock.patch.object(service.system, "notify")]
         for p in patches:
             p.start()
             self.addCleanup(p.stop)
@@ -90,7 +90,7 @@ class TestPass(ServiceTest):
         self.write("calculus.txt", "x")
         svc.tick(self.cfg)
         self.assertEqual(self.inbox(), ["calculus.txt"])
-        self.assertIn("Study\\Maths", said[0])
+        self.assertIn(os.path.join("Study", "Maths"), said[0])
         self.assertFalse(os.path.exists(config.path("moves")))
 
     def test_stop_request(self):

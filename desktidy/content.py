@@ -2,7 +2,8 @@
 
 What it can do:
   - extract text from PDF, Word/Excel/PowerPoint (old .doc too), LibreOffice, RTF, HTML, e-mail, notebooks,
-    epub, plain text and source code; read scanned PDFs and images with the built-in Windows OCR
+    epub, plain text and source code; read scanned PDFs and images with the OCR of the system (Windows OCR,
+    macOS Vision, Tesseract on Linux)
   - recognise photos (camera EXIF data), screenshots, icons, source code pasted into a .txt, and the kind of
     project inside folders and zip files (Python, web, STM32, KiCad, gerber, 3D printing, photos, music...)
   - collect title candidates (document metadata, e-mail subject, first heading) used to rename files
@@ -17,14 +18,14 @@ import logging
 import os
 import re
 import stat
-import subprocess
 import tempfile
 import zipfile
 import zlib
 from collections import Counter, OrderedDict
 from functools import lru_cache
 
-from .config import OCR_SCRIPT, strip_accents
+from . import system
+from .config import strip_accents
 
 logging.getLogger("pypdf").setLevel(logging.ERROR)
 
@@ -464,23 +465,21 @@ def _pdf_fallback(path: str) -> str:
 SCREEN_SIZES = {(1920, 1080), (1366, 768), (1536, 864), (1440, 900), (1600, 900), (1280, 720), (1280, 800),
                 (1920, 1200), (2560, 1440), (2560, 1600), (2880, 1800), (3840, 2160), (3440, 1440), (2736, 1824),
                 (3000, 2000), (2256, 1504), (1080, 1920), (1080, 2340), (1080, 2400), (1170, 2532), (1179, 2556),
-                (1284, 2778), (1290, 2796), (720, 1600), (1440, 3200)}
+                (1284, 2778), (1290, 2796), (720, 1600), (1440, 3200),
+                (2560, 1664), (2880, 1864), (2940, 1912), (3024, 1964), (3456, 2234), (4480, 2520), (5120, 2880),
+                (6016, 3384)}  # the last ones: MacBook Air / Pro, iMac and Studio / Pro Display (Retina pixels)
 PHOTO_NAME = re.compile(r"^(?:img|pxl|dsc|dscn|dji|gopr|mvimg)[_-]?\d{4}|^\d{8}_\d{6}|^whatsapp image", re.I)
-SCREENSHOT_NAME = re.compile(r"screenshot|schermata|screen ?shot|cattura|snip", re.I)
+SCREENSHOT_NAME = re.compile(r"screenshot|schermata|screen ?shot|cattura|snip|bildschirmfoto|capture d.?(?:e|é)cran"
+                             r"|captura de pantalla", re.I)
 
 
 @lru_cache(maxsize=1)
 def screen_sizes() -> frozenset:
-    sizes = set(SCREEN_SIZES)
+    """The common screen sizes and the real screens of this computer (asked once)."""
     try:
-        import ctypes
-        w, h = ctypes.windll.user32.GetSystemMetrics(0), ctypes.windll.user32.GetSystemMetrics(1)
-        for scale in (1, 1.25, 1.5, 1.75, 2, 2.25, 2.5):  # the real screen with Windows display scaling
-            if (w * scale).is_integer() and (h * scale).is_integer():
-                sizes |= {(int(w * scale), int(h * scale)), (int(h * scale), int(w * scale))}
+        return frozenset(SCREEN_SIZES | system.screen_sizes())
     except Exception:
-        pass
-    return frozenset(sizes)
+        return frozenset(SCREEN_SIZES)
 
 
 def _xp_text(v) -> str:
@@ -509,7 +508,8 @@ def _image(an: Analysis, options: dict) -> None:
         an.info["camera"] = " ".join(str(x).strip() for x in (make, model) if x) or "yes"
     elif PHOTO_NAME.search(an.stem):
         an.tags.add("photo")
-    elif SCREENSHOT_NAME.search(an.stem) or re.search(r"snip|screenshot|greenshot|sharex|lightshot", software, re.I):
+    elif SCREENSHOT_NAME.search(an.stem) or re.search(r"snip|screenshot|greenshot|sharex|lightshot|flameshot|"
+                                                      r"spectacle", software, re.I):
         an.tags.add("screenshot")
     elif fmt == "PNG" and (w, h) in screen_sizes():
         an.tags.add("screenshot")
@@ -525,17 +525,9 @@ def _image(an: Analysis, options: dict) -> None:
     an.is_document = bool(an.info.get("ocr"))
 
 
-# ---------------------------------------------------------------- OCR (Windows.Media.Ocr, offline)
+# ---------------------------------------------------------------- OCR (offline: Windows OCR, macOS Vision, Tesseract)
 def _ocr_png(png: str) -> str:
-    if os.name != "nt" or not OCR_SCRIPT.exists():
-        return ""
-    try:
-        r = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-                            "-File", str(OCR_SCRIPT), "-Path", png], capture_output=True, timeout=60,
-                           creationflags=0x08000000)
-    except (OSError, subprocess.TimeoutExpired):
-        return ""
-    return r.stdout.decode("utf-8", "ignore") if r.returncode == 0 else ""
+    return system.ocr(png)
 
 
 def _ocr_image(im) -> str:
@@ -639,7 +631,8 @@ def container_tags(extensions: Counter, file_names: list[str]) -> set[str]:
         tags.add("video_folder")
     if share(FONT_EXT) >= 0.6:
         tags.add("font")
-    if any(re.search(r"(?:^|[_\-. ])(?:setup|install(?:er)?)[^/\\]*\.exe$", n) for n in names) or extensions[".msi"]:
+    if any(re.search(r"(?:^|[_\-. ])(?:setup|install(?:er)?)[^/\\]*\.exe$", n) for n in names) or \
+            any(extensions[e] for e in (".msi", ".pkg", ".deb", ".rpm")):
         tags.add("installer")
     return tags
 

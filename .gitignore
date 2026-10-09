@@ -29,3 +29,6 @@ imports.json
 updates.json
 index.db
 index.db-*
+keys.json
+*.lock
+launchd-agent-off.plist

@@ -17,10 +17,10 @@ class CommandTest(IsolatedTest):
         self.cfg = self.config()
         os.replace(self.path("_data", "rules.json"), config.path("rules"))
         self.cfg = config.load_config()
-        p = mock.patch.object(cli.winapi, "notify")
+        p = mock.patch.object(cli.system, "notify")
         self.notify = p.start()
         self.addCleanup(p.stop)
-        q = mock.patch.object(service.winapi, "notify")
+        q = mock.patch.object(service.system, "notify")
         q.start()
         self.addCleanup(q.stop)
 
@@ -78,7 +78,7 @@ class TestFilesCommands(CommandTest):
         row = service.read_moves()[-1]
         self.run_cli("url", f"desktidy:undo?ids={service.move_id(row)}")
         self.assertTrue(os.path.exists(p))
-        with mock.patch.object(cli.winapi, "reveal") as reveal:
+        with mock.patch.object(cli.system, "reveal") as reveal:
             self.run_cli("url", f"desktidy:open?id={service.move_id(row)}")
         reveal.assert_called_once()
         self.assertIn("Unknown DeskTidy link", self.run_cli("url", "desktidy:format?drive=C"))
@@ -114,7 +114,7 @@ class TestAdviceApply(CommandTest):
 
 class TestEntryPoints(CommandTest):
     def test_gui_shows_problems_in_a_message_box(self):
-        with mock.patch.object(cli.winapi, "message") as message, mock.patch("sys.argv", ["desktidyw", "tidy", "C:\\nope.txt"]):
+        with mock.patch.object(cli.system, "message") as message, mock.patch("sys.argv", ["desktidyw", "tidy", "C:\\nope.txt"]):
             cli.main_gui()
         message.assert_called_once()
         self.assertIn("Not found", message.call_args[0][0])

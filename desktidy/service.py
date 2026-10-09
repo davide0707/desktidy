@@ -1,6 +1,7 @@
 """The background service: every few seconds it looks at the watched folders and files away what is new.
 
-It starts at sign-in through Task Scheduler (no window) and is controlled with the `desktidy` command.
+It starts at sign-in, without a window (Task Scheduler on Windows, a launchd agent on macOS, the desktop's autostart
+or a systemd user service on Linux), and is controlled with the `desktidy` command.
 Run it in the foreground with:  desktidy-service --dry-run --once --now   (shows what it would do).
 """
 
@@ -8,11 +9,13 @@ from __future__ import annotations
 
 import argparse
 import csv
+import errno
 import hashlib
 import logging
 import os
 import queue
 import shutil
+import signal
 import sys
 import threading
 import time
@@ -20,14 +23,13 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from logging.handlers import RotatingFileHandler
 
-from . import APP_NAME, __version__, classifier, config, folders, naming, usage, winapi
+from . import APP_NAME, __version__, classifier, config, folders, naming, system, usage
 from . import content as ct
 
 TEMPORARY = {".crdownload", ".part", ".partial", ".download", ".opdownload", ".tmp", ".!ut", ".aria2",
              ".desktidy_tmp"}
-IGNORED_NAMES = {"desktop.ini", "thumbs.db"}
-IGNORED_EXT = {".lnk", ".url"}
-HIDDEN_SYSTEM_LINK = 0x2 | 0x4 | 0x400
+IGNORED_NAMES = {"desktop.ini", "thumbs.db", ".ds_store", ".localized", ".directory"}
+IGNORED_EXT = {".lnk", ".url", ".desktop", ".webloc", ".inetloc"}  # shortcuts and launchers
 JOB_POLL_SECONDS = 45
 JOB_GIVE_UP_HOURS = 26
 
@@ -92,20 +94,30 @@ def free_name(folder: str, name: str, is_dir: bool) -> str:
     return dst
 
 
+def _same_disk(src: str, folder: str) -> bool:
+    try:
+        return os.lstat(src).st_dev == os.stat(folder).st_dev
+    except OSError:
+        return False
+
+
 def move(src: str, folder: str, name: str, is_dir: bool) -> tuple[str, str]:
     """("MOVED", final path) or ("DUPLICATE_TRASHED", the identical file already there)."""
     os.makedirs(folder, exist_ok=True)
     if not is_dir:
         twin = find_duplicate(src, folder)
         if twin:
-            if winapi.recycle(src):
+            if system.recycle(src):
                 return "DUPLICATE_TRASHED", twin
-            raise OSError("duplicate could not be sent to the Recycle Bin")
+            raise OSError(f"duplicate could not be sent to the {system.TRASH}")
     dst = free_name(folder, name, is_dir)
-    drive = lambda p: os.path.splitdrive(os.path.abspath(p))[0].lower()
-    if drive(src) == drive(folder):
-        os.rename(src, dst)
-        return "MOVED", dst
+    if _same_disk(src, folder):
+        try:
+            os.rename(src, dst)
+            return "MOVED", dst
+        except OSError as ex:
+            if ex.errno != errno.EXDEV and getattr(ex, "winerror", None) != 17:
+                raise  # 17 = ERROR_NOT_SAME_DEVICE: copied below, like any other disk
     tmp = dst + ".desktidy_tmp"
     if is_dir:
         shutil.copytree(src, tmp)
@@ -201,6 +213,8 @@ class Service:
         self.busy: set[str] = set()             # housekeeping tasks running in the background
         self.cards: set[str] = set()            # memory cards already seen (serial numbers)
         self.limit_said: str | None = None
+        self.denied: set[str] = set()           # watched folders the system does not let us read (said once)
+        self.stopping = False                   # a stop signal arrived (SIGTERM from launchd, systemd, desktidy stop)
         self.tray = None
         self.state = {"pid": os.getpid(), "version": __version__,
                       "started": datetime.now().isoformat(timespec="seconds"),
@@ -216,7 +230,7 @@ class Service:
             return True
         if os.path.splitext(name)[1] in IGNORED_EXT | TEMPORARY:
             return True
-        return bool(entry.stat(follow_symlinks=False).st_file_attributes & HIDDEN_SYSTEM_LINK)
+        return system.is_hidden(entry)
 
     @staticmethod
     def last_change(path: str, is_dir: bool, enough: float | None = None) -> float:
@@ -244,7 +258,7 @@ class Service:
         if not is_dir:
             if any(os.path.exists(path + e) for e in (".part", ".crdownload", ".download")):
                 return False
-            if winapi.file_in_use(path):
+            if system.file_in_use(path):
                 return False
         return True
 
@@ -286,6 +300,9 @@ class Service:
             base = cfg.expand(watched["path"])
             try:
                 entries = list(os.scandir(base))
+            except PermissionError:
+                self.no_access(base)
+                continue
             except OSError:
                 continue
             for e in entries:
@@ -332,7 +349,7 @@ class Service:
             self.limit_said = today
             log.info(f"daily limit reached ({limit} files): the rest waits for tomorrow (desktidy limit)")
             if not self.opts.once:
-                winapi.notify(f"{APP_NAME}: daily limit reached", f"{limit} files tidied today. The others wait for "
+                system.notify(f"{APP_NAME}: daily limit reached", f"{limit} files tidied today. The others wait for "
                               "tomorrow. Change it: desktidy limit", [("Settings", "desktidy:status")])
         return max(0, room)
 
@@ -372,7 +389,7 @@ class Service:
             self.settled[os.path.normcase(path)] = (st.st_size, st.st_mtime)
             return []
         if self.opts.dry_run:
-            self.opts.say(f"{original}  ->  {config.short(dest)}\\{name}   ({why})")
+            self.opts.say(f"{original}  ->  {os.path.join(config.short(dest), name)}   ({why})")
             return []
         action, final = move(path, dest, name, is_dir)
         self.ids.append(record(action, path, final, why))
@@ -380,7 +397,7 @@ class Service:
         self.state["moved_today"] += 1
         self.errors.pop(path, None)
         if action == "DUPLICATE_TRASHED":
-            return [f"{original}: duplicate of {os.path.basename(final)}, sent to the Recycle Bin"]
+            return [f"{original}: duplicate of {os.path.basename(final)}, sent to the {system.TRASH}"]
         if not is_dir:
             self.after_move(cfg, final, an, summary, due)
         return [f"{original} -> {config.short(os.path.dirname(final))}" + (f" as {name}" if renamed else "")]
@@ -400,7 +417,7 @@ class Service:
                     log.info(f"DEADLINE {d['date']}: {d['what']}" + (f" ({d['amount']})" if d.get("amount") else ""))
             family = versions.family_of(final)
             if family and not self.opts.once:
-                winapi.notify(f"{APP_NAME}: older versions of {os.path.basename(final)}",
+                system.notify(f"{APP_NAME}: older versions of {os.path.basename(final)}",
                               f"{len(family.older)} older version(s) in {config.short(family.folder)}. "
                               "Move them aside: desktidy versions", [("Show", "desktidy:versions")])
         except Exception as ex:
@@ -504,9 +521,9 @@ class Service:
                     f"PIN it?\nNew files about \"{name}\" (by name or by content) and files similar to the ones "
                     "you put inside will be filed there.\n\nYou can change your mind any time:  desktidy pinned")
             try:
-                yes = winapi.ask_yes_no(text, f"{APP_NAME} - new folder")
-                if not os.path.isdir(folder):
-                    continue
+                yes = system.ask_yes_no(text, f"{APP_NAME} - new folder")
+                if yes is None or not os.path.isdir(folder):
+                    continue  # nobody could answer (no dialog tool): it stays in "desktidy pinned suggest"
                 if yes:
                     folders.pin(folder)
                     log.info(f"PINNED: {folder}")
@@ -543,7 +560,7 @@ class Service:
                 result = advice.generate(cfg, log.info)
                 if result and result["tips"]:
                     n = len(result["tips"])
-                    winapi.notify(f"{APP_NAME}: {n} idea{'s' if n > 1 else ''} to organise your files",
+                    system.notify(f"{APP_NAME}: {n} idea{'s' if n > 1 else ''} to organise your files",
                                   "\n".join(t["title"] for t in result["tips"][:3]),
                                   [("See them", "desktidy:advice")], "desktidy:advice")
             except Exception as ex:
@@ -581,7 +598,7 @@ class Service:
         if self.opts.dry_run or self.opts.once:
             return
         if self.due("deadlines", 600):
-            for d in deadlines.remind(cfg, winapi.notify):
+            for d in deadlines.remind(cfg, system.notify):
                 log.info(f"REMINDER: {d['what']} due {d['date']}")
         if importer.settings(cfg)["enabled"]:
             self.check_cards(cfg)
@@ -590,7 +607,7 @@ class Service:
                 for p in learn.scan(cfg):
                     rule = p["rule"]
                     log.info(f"LEARNED: a rule for {rule['destination']} from {len(p['examples'])} corrections")
-                    winapi.notify(f"{APP_NAME} learned from your corrections",
+                    system.notify(f"{APP_NAME} learned from your corrections",
                                   f"Files like {', '.join(p['examples'][:2])} go to {os.path.basename(rule['destination'])}."
                                   " Add the rule?", [("Review", "desktidy:learn")])
             self.background("learn", learn_work)
@@ -600,11 +617,11 @@ class Service:
             def archive_work():
                 lines = archive.run(cfg, log.info)
                 if lines:
-                    winapi.notify(f"{APP_NAME}: {len(lines)} old item(s) archived", "\n".join(lines[:3]),
+                    system.notify(f"{APP_NAME}: {len(lines)} old item(s) archived", "\n".join(lines[:3]),
                                   [("Show", "desktidy:where")])
             self.background("archive", archive_work)
         if self.due("updates", 3600) and updates.due(cfg):
-            self.background("updates", lambda: updates.check(winapi.notify))
+            self.background("updates", lambda: updates.check(system.notify))
 
     def check_cards(self, cfg: config.Config) -> None:
         """A memory card with photos was plugged in: offer to import the new ones (or import them, if auto)."""
@@ -623,12 +640,12 @@ class Service:
                 if importer.settings(cfg)["auto"]:
                     s = importer.run(card["root"], cfg)
                     log.info(f"IMPORTED {s['copied']} photos/videos from {label}")
-                    winapi.notify(f"{APP_NAME}: {s['copied']} photos/videos imported from {label}",
+                    system.notify(f"{APP_NAME}: {s['copied']} photos/videos imported from {label}",
                                   ", ".join(config.short(f) for f in s["folders"][:3]))
                 else:
-                    winapi.notify(f"{len(new)} new photos/videos on {label} ({card['letter']}:)",
-                                  "Import them into Pictures, sorted by date?",
-                                  [("Import", f"desktidy:import?drive={card['letter']}"), ("Not now", "desktidy:status")])
+                    where = label if label == card["name"] else f"{label} ({card['name']})"
+                    system.notify(f"{len(new)} new photos/videos on {where}", "Import them into Pictures, sorted by date?",
+                                  [("Import", f"desktidy:import?card={card['serial']}"), ("Not now", "desktidy:status")])
             self.background(f"card-{card['serial']}", work)
         self.cards &= {c["serial"] for c in present}  # a card taken out is offered again when it comes back
 
@@ -639,7 +656,7 @@ class Service:
             buttons = [("Open", f"desktidy:open?id={ids[-1]}"), ("Undo", f"desktidy:undo?ids={ids[-1]}")]
         else:
             buttons = [("Show", "desktidy:where")] + ([("Undo all", f"desktidy:undo?ids={','.join(ids)}")] if ids else [])
-        winapi.notify(f"{APP_NAME}: {len(lines)} item{'s' if len(lines) > 1 else ''} tidied",
+        system.notify(f"{APP_NAME}: {len(lines)} item{'s' if len(lines) > 1 else ''} tidied",
                       "\n".join(lines[:4]) + ("\n..." if len(lines) > 4 else ""), buttons, "desktidy:where")
 
     def tooltip(self, paused: bool) -> str:
@@ -666,25 +683,42 @@ class Service:
         except OSError:
             pass
 
-    @staticmethod
-    def wait(seconds: float) -> bool:
-        """Sleep until the next pass; False if a stop was requested meanwhile (STOP file)."""
+    def no_access(self, folder: str) -> None:
+        """The system refuses to let DeskTidy read a watched folder (macOS privacy settings): say how, once."""
+        if folder in self.denied:
+            return
+        self.denied.add(folder)
+        how = ("System Settings > Privacy & Security > Files and Folders (or Full Disk Access): allow Python"
+               if system.MACOS else "check the folder permissions")
+        log.info(f"ERROR: no permission to read {folder}: {how}")
+        if not (self.opts.dry_run or self.opts.once):
+            system.notify(f"{APP_NAME} can't read {os.path.basename(folder)}", how[0].upper() + how[1:])
+
+    def wait(self, seconds: float) -> bool:
+        """Sleep until the next pass; False if a stop was requested meanwhile (STOP file, or a stop signal)."""
         end = time.time() + seconds
         stop = config.path("stop")
         while time.time() < end:
-            if os.path.exists(stop):
+            if self.stopping or os.path.exists(stop):
                 return False
             time.sleep(1)
-        return not os.path.exists(stop)
+        return not (self.stopping or os.path.exists(stop))
+
+    def _on_signal(self, signum, frame) -> None:
+        self.stopping = True  # the current pass ends normally, then the service exits cleanly
 
     def run(self) -> None:
         if not (self.opts.dry_run or self.opts.once):
-            if not winapi.claim_single_instance(config.SERVICE_MUTEX):
+            if not system.claim_single_instance(config.SERVICE_MUTEX):
                 return
             try:
                 os.remove(config.path("stop"))  # a stop request left over from before
             except OSError:
                 pass
+            if threading.current_thread() is threading.main_thread():
+                for name in ("SIGTERM", "SIGHUP"):
+                    if hasattr(signal, name):
+                        signal.signal(getattr(signal, name), self._on_signal)
             threading.Thread(target=self._answer_questions, daemon=True).start()
             try:
                 if config.load_config(self.opts.config_file).get("tray", True):

@@ -1,6 +1,6 @@
 """Settings in the browser (`desktidy editor`): rules, AI, limits, renaming, archive, deadlines and the other
 options of rules.json in a page instead of a JSON file. Nothing to install and nothing online: a tiny web server
-on 127.0.0.1 that only this PC can reach, open while the command runs.
+on 127.0.0.1 that only this computer can reach, open while the command runs.
 
 Security: the page is served only with a random token in its address; every API call must carry the token in a
 header (so other web pages can't call it: browsers don't send custom headers across sites without permission,
@@ -15,6 +15,7 @@ import os
 import secrets
 import threading
 import time
+import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import APP_NAME, __version__, config, folders, providers
@@ -198,7 +199,7 @@ def serve(open_browser: bool = True, say=print) -> None:
     server = Server()
     say(f"{APP_NAME} settings: {server.url}")
     if open_browser:
-        os.startfile(server.url)
+        webbrowser.open(server.url)
 
     def watchdog():
         while not server.closing:

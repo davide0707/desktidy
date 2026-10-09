@@ -11,6 +11,7 @@ import getpass
 import io
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -18,11 +19,12 @@ import time
 from contextlib import redirect_stdout
 from datetime import date, datetime, timedelta
 
-from . import APP_NAME, REPO_URL, __author__, __version__, config, folders, usage, winapi
+from . import APP_NAME, REPO_URL, __author__, __version__, config, folders, system, usage
+from .explorer import console_command, service_command
 from .service import move_id, paused_until, read_moves, record, tidied_today
 
 INTERACTIVE = False  # True inside the console: commands ask for what is missing
-GUI = False          # True when started without a console (Explorer menu, notification buttons, tray)
+GUI = False          # True when started without a console (right-click menu, notification buttons, tray)
 UNDOABLE = ("MOVED", "ARCHIVED", "ARCHIVED_ZIP")
 
 
@@ -32,7 +34,7 @@ class C:
 
 
 def enable_colors() -> None:
-    if os.environ.get("NO_COLOR") or not sys.stdout.isatty() or not winapi.enable_ansi():
+    if os.environ.get("NO_COLOR") or not sys.stdout.isatty() or not system.enable_ansi():
         return
     C.R, C.G, C.Y, C.B, C.M, C.CY = "\x1b[91m", "\x1b[92m", "\x1b[93m", "\x1b[94m", "\x1b[95m", "\x1b[96m"
     C.W, C.GR, C.BOLD, C.X = "\x1b[97m", "\x1b[90m", "\x1b[1m", "\x1b[0m"
@@ -132,7 +134,7 @@ def banner() -> None:
 
 
 def summary_line() -> str:
-    running = winapi.instance_running(config.SERVICE_MUTEX)
+    running = system.instance_running(config.SERVICE_MUTEX)
     paused, until = paused_until()
     if running and paused:
         state = f"{C.Y}● PAUSED{C.X}" + (f" until {until:%H:%M}" if until else "")
@@ -145,7 +147,7 @@ def summary_line() -> str:
         cfg = config.load_config()
         mode, p = config.ai_mode(cfg), providers.current(cfg)
         service = f" {C.GR}({p.id}){C.X}"
-        key = f" {C.Y}(no key){C.X}" if mode != "off" and p.key_env and not winapi.api_key(p.key_env) else ""
+        key = f" {C.Y}(no key){C.X}" if mode != "off" and p.key_env and not system.api_key(p.key_env) else ""
     except Exception:
         mode, service, key = "?", "", ""
     return (f"{state}   {C.GR}|{C.X}   AI: {C.CY}{mode}{C.X}{service}{key}   {C.GR}|{C.X}   "
@@ -153,24 +155,18 @@ def summary_line() -> str:
 
 
 def prompt() -> str:
-    running = winapi.instance_running(config.SERVICE_MUTEX)
+    running = system.instance_running(config.SERVICE_MUTEX)
     paused, _ = paused_until()
     state = (f"{C.Y}paused" if paused else f"{C.G}running") if running else f"{C.R}stopped"
-    user = os.environ.get("USERNAME", "user").lower()
+    try:
+        user = getpass.getuser().lower()
+    except (OSError, KeyError, ImportError):
+        user = "user"
     print(f"\n{C.G}┌──({C.X}{C.BOLD}{C.B}{user}@desktidy{C.X}{C.G})-[{C.X}{C.BOLD}{state}{C.X}{C.G}]{C.X}")
     return input(f"{C.G}└─{C.X}{C.BOLD}{C.B}${C.X} ").replace("\ufeff", "").replace("ï»¿", "")
 
 
 # ================================================================ service control
-def scripts_dir() -> str:
-    return os.path.dirname(sys.executable)
-
-
-def service_exe() -> str:
-    exe = os.path.join(scripts_dir(), "desktidy-service.exe")
-    return exe if os.path.exists(exe) else os.path.join(scripts_dir(), "pythonw.exe")
-
-
 def wait_for(condition, seconds: float, message: str = "") -> bool:
     if message:
         print(f"  {C.B}[*]{C.X} {message}", end="", flush=True)
@@ -189,7 +185,7 @@ def wait_for(condition, seconds: float, message: str = "") -> bool:
 
 
 def running() -> bool:
-    return winapi.instance_running(config.SERVICE_MUTEX)
+    return system.instance_running(config.SERVICE_MUTEX)
 
 
 def start_service() -> bool:
@@ -197,29 +193,25 @@ def start_service() -> bool:
         os.remove(config.path("stop"))
     except OSError:
         pass
-    task = winapi.task_info(config.TASK_NAME)
-    if task.get("exists") and task.get("enabled"):
-        winapi.schtasks(config.TASK_NAME, "/run")
-    else:  # autostart disabled or not installed: start it directly, without a window
-        exe = service_exe()
-        args = [exe] if exe.endswith("desktidy-service.exe") else [exe, "-m", "desktidy.service"]
-        subprocess.Popen(args, cwd=str(config.data_dir()), close_fds=True,
-                         creationflags=winapi.DETACHED | winapi.NO_WINDOW)
+    if not system.autostart_start():  # autostart off or not installed: start it directly, without a window
+        subprocess.Popen(service_command(), cwd=str(config.data_dir()), **system.detached())
     return wait_for(running, 60, "starting")
 
 
 def stop_service() -> bool:
+    """Ask nicely (STOP file: the current work finishes), then ask the system, then end the process."""
     with open(config.path("stop"), "w", encoding="utf-8") as f:
         f.write(datetime.now().isoformat(timespec="seconds"))
     stopped = wait_for(lambda: not running(), 20, "waiting for the current work to finish")
     if not stopped:
-        winapi.schtasks(config.TASK_NAME, "/end")
+        system.autostart_end()
         stopped = wait_for(lambda: not running(), 5)
     if not stopped:
-        pid = (config.read_json(config.path("state"), {}) or {}).get("pid")
+        pid = system.instance_pid(config.SERVICE_MUTEX) or (config.read_json(config.path("state"), {}) or {}).get("pid")
         if pid:
-            subprocess.run(["taskkill", "/pid", str(pid), "/f"], capture_output=True)
-            stopped = wait_for(lambda: not running(), 5)
+            system.kill(pid)
+            stopped = wait_for(lambda: not running(), 5) or (system.kill(pid, force=True) and
+                                                             wait_for(lambda: not running(), 5))
     try:
         os.remove(config.path("stop"))
     except OSError:
@@ -239,7 +231,7 @@ HOUSE_RULES = [
      "      Office lock files, hidden and system files are skipped."),
     ("Nothing is lost.",
      "Every move and rename is logged (desktidy where) and can be undone (desktidy undo).\n"
-     "      Identical duplicates go to the Recycle Bin, never deleted."),
+     f"      Identical duplicates go to the {system.TRASH}, never deleted."),
     ("Private stays private.",
      "IDs, payslips, bills, CVs, photos and screenshots are never sent to the AI. The AI is optional,\n"
      "      with a daily limit and a budget."),
@@ -313,7 +305,7 @@ def cmd_status(args):
     title("Status")
     state = config.read_json(config.path("state"), {}) or {}
     paused, until = paused_until()
-    task = winapi.task_info(config.TASK_NAME)
+    task = system.autostart_info()
     if running():
         detail = f" {C.GR}(last pass {ago(state.get('last_pass'))}){C.X}" if state.get("last_pass") else ""
         row("Service", f"{C.G}{C.BOLD}RUNNING{C.X}{detail}", f"{C.G}[+]{C.X}")
@@ -343,9 +335,9 @@ def cmd_status(args):
     if mode != "off":
         row("AI service", f"{p.name} · {config.ai_model(cfg)} · {config.ai_delivery(cfg)}"
                           + (f" · {C.G}free{C.X}" if p.free else ""))
-        key = winapi.api_key(p.key_env)
+        key = system.api_key(p.key_env)
         if key:
-            row("API key", winapi.mask(key))
+            row("API key", system.mask(key))
         elif p.key_env:
             row("API key", f"{C.Y}none{C.X} - the AI can't work: desktidy key", f"{C.Y}[!]{C.X}")
     u = usage.read()
@@ -359,6 +351,13 @@ def cmd_status(args):
     elif mode != "off" and key and (block := usage.block_reason(cfg, u)):
         row("AI paused", f"{C.Y}{block}{C.X}", f"{C.Y}[!]{C.X}")
     row("Renaming", f"{config.rename_mode(cfg)} - {config.RENAME_MODES[config.rename_mode(cfg)]}")
+    if cfg.get("analysis", {}).get("ocr", True):
+        engine = system.ocr_engine()
+        if engine:
+            row("Reading scans", f"{engine} {C.GR}(OCR, on this computer){C.X}")
+        else:
+            row("Reading scans", f"{C.Y}no OCR{C.X}: sudo apt install tesseract-ocr tesseract-ocr-ita  "
+                                 f"{C.GR}(or dnf / pacman: tesseract){C.X}", f"{C.Y}[!]{C.X}")
     from . import advice
     tips = advice.load()
     if tips.get("tips"):
@@ -463,9 +462,9 @@ def cmd_stop(args):
     else:
         fail("Could not stop it")
         return
-    task = winapi.task_info(config.TASK_NAME)
+    task = system.autostart_info()
     if forever and task.get("enabled"):
-        if winapi.schtasks(config.TASK_NAME, "/change", "/disable"):
+        if system.autostart_enable(False):
             ok("Autostart off: it won't start again at the next sign-in")
     elif task.get("exists") and task.get("enabled"):
         info(f"It starts again at the next sign-in. Earlier: {C.W}desktidy start{C.X} · "
@@ -482,7 +481,7 @@ def cmd_restart(args):
 
 
 def cmd_autostart(args):
-    task = winapi.task_info(config.TASK_NAME)
+    task = system.autostart_info()
     choice = args[0].lower() if args else ""
     if not choice:
         state = ("not installed" if task.get("exists") is False else
@@ -497,14 +496,14 @@ def cmd_autostart(args):
     if choice in ("on", "yes", "1", "true"):
         if task.get("exists") is False:
             cmd_install([])
-        elif winapi.schtasks(config.TASK_NAME, "/change", "/enable"):
+        elif system.autostart_enable(True):
             ok("Autostart on: it starts at every sign-in")
         else:
             fail("Could not turn it on")
     elif choice in ("off", "no", "0", "false"):
         if task.get("exists") is False:
             info("Not installed: it doesn't start by itself anyway")
-        elif winapi.schtasks(config.TASK_NAME, "/change", "/disable"):
+        elif system.autostart_enable(False):
             ok("Autostart off: it won't start at the next sign-in")
             if running():
                 info(f"It is still running now (to stop it: {C.W}desktidy stop{C.X})")
@@ -522,17 +521,17 @@ def print_move(m: dict, number: int | None = None) -> None:
     n = f"{C.W}{number:>3}{C.X} " if number is not None else "    "
     about = ""
     if m["action"] == "DUPLICATE_TRASHED":
-        where = f"{C.Y}Recycle Bin{C.X} (duplicate of {config.short(m['destination'])})"
+        where = f"{C.Y}{system.TRASH}{C.X} (duplicate of {config.short(m['destination'])})"
     elif m["action"] == "UNDONE":
         where = f"{C.CY}restored{C.X} to {config.short(m['destination'])}"
     elif m["action"] == "RECYCLED":
-        where = f"{C.Y}Recycle Bin{C.X}"
+        where = f"{C.Y}{system.TRASH}{C.X}"
     else:
         dest = ops.current_path(m["destination"])
         label = {"ARCHIVED": "archived in ", "ARCHIVED_ZIP": "archived (zip) in "}.get(m["action"], "")
         where = f"{label}{C.G}{config.short(os.path.dirname(dest))}{C.X}"
         if os.path.basename(dest) != config.clean_name(name):
-            where += f"\\{C.BOLD}{os.path.basename(dest)}{C.X}"
+            where += f"{os.sep}{C.BOLD}{os.path.basename(dest)}{C.X}"
         about = index.summary_of(dest)
     print(f"  {n}{C.GR}{when}{C.X}  {C.BOLD}{name}{C.X}  {C.GR}#{move_id(m)}{C.X}\n        -> {where}"
           + (f"\n        {C.CY}about: {about}{C.X}" if about else "") + f"\n        {C.GR}why: {m['reason']}{C.X}")
@@ -554,7 +553,7 @@ def find_moves(text: str, actions=("MOVED", "DUPLICATE_TRASHED", "UNDONE", "ARCH
 
 def cmd_where(args):
     if "--all" in args:
-        winapi.open_path(config.path("moves"))
+        system.open_path(config.path("moves"))
         return
     text = " ".join(a for a in args if not a.startswith("--"))
     if not text and INTERACTIVE:
@@ -568,13 +567,13 @@ def cmd_where(args):
     for i, m in enumerate(found, 1):
         print_move(m, i)
     if "--open" in args:
-        winapi.reveal(current_path(found[0]["destination"]))
+        system.reveal(current_path(found[0]["destination"]))
     elif INTERACTIVE:
-        n = ask("Number to show in Explorer (Enter = none):")
+        n = ask(f"Number to show in {system.FILE_MANAGER} (Enter = none):")
         if n.isdigit() and 1 <= int(n) <= len(found):
-            winapi.reveal(current_path(found[int(n) - 1]["destination"]))
+            system.reveal(current_path(found[int(n) - 1]["destination"]))
     else:
-        hint(f"\n  Show the first in Explorer: desktidy where {text or '<name>'} --open"
+        hint(f"\n  Show the first in {system.FILE_MANAGER}: desktidy where {text or '<name>'} --open"
              "   ·   whole log: desktidy where --all")
 
 
@@ -626,7 +625,7 @@ def cmd_undo(args):
             fail(p)
         if GUI and restored:
             names = "\n".join(os.path.basename(p) for p in restored[:4])
-            winapi.notify(f"{APP_NAME}: {len(restored)} item(s) put back",
+            system.notify(f"{APP_NAME}: {len(restored)} item(s) put back",
                           names + "\nDeskTidy leaves them there until you change them.")
         return
     candidates = [m for m in find_moves("", UNDOABLE) if os.path.exists(current_path(m["destination"]))]
@@ -659,16 +658,16 @@ def cmd_undo(args):
 
 
 def resolve_folder(text: str) -> str:
-    """A folder path: absolute, or a name looked up on the Desktop, in Documents and in the current folder."""
-    text = unquote(text)
+    """A folder path: absolute (~ too), or a name looked up on the Desktop, in Documents and in the current folder."""
+    text = os.path.expanduser(unquote(text))
     if os.path.isabs(text):
         return os.path.normpath(text)
-    home = os.path.expanduser("~")
-    for base in (os.path.join(home, "Desktop"), os.path.join(home, "Documents"), os.getcwd()):
+    desktop, docs = config.BUILTIN_VARIABLES["DESKTOP"], config.BUILTIN_VARIABLES["DOCS"]
+    for base in (desktop, docs, os.getcwd()):
         candidate = os.path.join(base, text)
         if os.path.isdir(candidate):
             return os.path.normpath(candidate)
-    return os.path.normpath(os.path.join(home, "Desktop", text))  # if it doesn't exist: on the Desktop
+    return os.path.normpath(os.path.join(desktop, text))  # if it doesn't exist: on the Desktop
 
 
 def cmd_pinned(args):
@@ -795,7 +794,7 @@ def cmd_explain(args):
     from . import content as ct
     cfg = config.load_config()
     is_dir = os.path.isdir(target)
-    info("Analysing on this PC (nothing is sent)...")
+    info("Analysing on this computer (nothing is sent)...")
     an = ct.analyze(target, is_dir, cfg)
     d = classifier.decide(target, is_dir, cfg, an)
     plan = naming.plan(an, cfg)
@@ -916,7 +915,7 @@ def cmd_spend(args):
         return
     if sub in ("web", "console", "billing"):
         info(f"Opening {config.BILLING_URL}")
-        winapi.open_path(config.BILLING_URL)
+        system.open_path(config.BILLING_URL)
         return
 
     cfg = config.load_config()
@@ -970,7 +969,7 @@ def cmd_spend(args):
     if INTERACTIVE:
         value = ask("Balance you see NOW in the Anthropic console, in USD (Enter = skip, 'web' = open it):")
         if value.lower() == "web":
-            winapi.open_path(config.BILLING_URL)
+            system.open_path(config.BILLING_URL)
             value = ask("Balance in USD (Enter = skip):")
         if value:
             cmd_spend(["credit", value])
@@ -999,7 +998,7 @@ def provider_table(cfg) -> list:
         if not p.key_env or p.local:
             key_state = ""
         else:
-            key_state = f"  {C.GR}·{C.X} {C.G}key set{C.X}" if winapi.api_key(p.key_env) else f"  {C.GR}· no key{C.X}"
+            key_state = f"  {C.GR}·{C.X} {C.G}key set{C.X}" if system.api_key(p.key_env) else f"  {C.GR}· no key{C.X}"
         print(f"   {mark} {C.W}{i}){C.X} {C.BOLD}{pid:<11}{C.X}{p.name}{key_state}\n"
               f"        {cost}\n        {C.GR}model {p.model or '(set one)'} · {p.privacy}"
               f"{' · reads images' if p.vision else ' · text only'}{C.X}")
@@ -1027,7 +1026,7 @@ def choose_provider(pid: str) -> bool:
         info("Install Ollama from ollama.com, then:  ollama pull " + p.model)
     elif pid == "custom":
         info('Set the server in rules.json: "ai": {"base_url": "http://localhost:1234/v1", "model": "..."}')
-    if p.key_env and not winapi.api_key(p.key_env):
+    if p.key_env and not system.api_key(p.key_env):
         warn(f"no {p.name} key yet: {C.W}desktidy key{C.X}  (get one at {p.key_url})")
         if INTERACTIVE and confirm("Paste the key now?", default_yes=True):
             cmd_key([])
@@ -1129,7 +1128,7 @@ def cmd_ai(args):
     ok(f"AI: {C.BOLD}{mode}{C.X} - {text}" + (f" (max {limit} files/day)" if limit else ""))
     info("Applies from the next pass (within 30 seconds), no restart needed")
     p = providers.current(cfg)
-    if mode != "off" and p.key_env and not winapi.api_key(p.key_env):
+    if mode != "off" and p.key_env and not system.api_key(p.key_env):
         warn(f"no {p.name} key yet: {C.W}desktidy key{C.X}")
 
 
@@ -1142,9 +1141,9 @@ def cmd_key(args):
         _test_key(None, cfg)
         return
     sub = args[0] if args else ""
-    current = winapi.api_key(p.key_env)
+    current = system.api_key(p.key_env)
     if sub.lower() in ("remove", "delete", "clear"):
-        winapi.set_api_key(None, p.key_env)
+        system.set_api_key(None, p.key_env)
         ok(f"{p.name} key removed")
         return
     if sub.lower() in ("test", "check"):
@@ -1155,7 +1154,7 @@ def cmd_key(args):
         return
     new = sub
     if not new:
-        info(f"{p.name} key ({p.key_env}): {winapi.mask(current)}")
+        info(f"{p.name} key ({p.key_env}): {system.mask(current)}  {C.GR}(kept in {system.KEYS_WHERE}){C.X}")
         if not INTERACTIVE and not sys.stdin.isatty():
             hint("Usage: desktidy key <NEW-KEY>   ·   desktidy key test   ·   desktidy key remove\n"
                  "  (for another service first: desktidy ai provider <name>)")
@@ -1174,9 +1173,9 @@ def cmd_key(args):
         return
     if _test_key(new, cfg) is False and not confirm("The key was rejected. Save it anyway?"):
         return
-    winapi.set_api_key(new, p.key_env)
+    system.set_api_key(new, p.key_env)
     usage.clear_warning()
-    ok(f"{p.name} key saved ({winapi.mask(new)}). The service uses it right away, no restart needed.")
+    ok(f"{p.name} key saved ({system.mask(new)}). The service uses it right away, no restart needed.")
 
 
 def _test_key(key: str | None, cfg) -> bool | None:
@@ -1233,7 +1232,7 @@ def cmd_advice(args):
         if not tip or not tip["paths"]:
             fail(f"Tip {n} has no folder to open")
             return
-        winapi.open_path(tip["paths"][0])
+        system.open_path(tip["paths"][0])
         return
     elif sub == "pin":
         tips = advice.load().get("tips", [])
@@ -1276,9 +1275,10 @@ def cmd_advice(args):
         for f in findings:
             warn(f)
     hint("\n  desktidy advice new · advice apply <n> (do it, after a preview) · advice undo · advice open <n> "
-         "(Explorer) · advice pin <n>")
+         f"({system.FILE_MANAGER}) · advice pin <n>")
     if INTERACTIVE and data.get("tips"):
-        n = ask("Number to open in Explorer, 'a' + number to apply it (Enter = back):").lower().replace(" ", "")
+        n = ask(f"Number to open in {system.FILE_MANAGER}, 'a' + number to apply it (Enter = back):")
+        n = n.lower().replace(" ", "")
         if n.isdigit():
             cmd_advice(["open", n])
         elif n.startswith("a") and n[1:].isdigit():
@@ -1366,11 +1366,11 @@ def cmd_find(args):
             snippet = h.snippet.replace(index.MARK[0], C.Y or "*").replace(index.MARK[1], C.GR or "*")
             print(f"      {C.GR}{snippet}{C.X}")
     if "--open" in args:
-        os.startfile(hits[0].path)
+        system.open_path(hits[0].path)
         return
     n = _pick("Number to open (Enter = none):", len(hits))
     if n:
-        os.startfile(hits[n - 1].path)
+        system.open_path(hits[n - 1].path)
 
 
 def _parse_date(text: str):
@@ -1399,7 +1399,7 @@ def cmd_deadlines(args):
             ok(f"Reminders back on for: {item['what']}")
         elif sub == "open":
             if item.get("path") and os.path.exists(item["path"]):
-                os.startfile(item["path"])
+                system.open_path(item["path"])
             else:
                 fail("The file is no longer where it was")
         else:
@@ -1536,7 +1536,7 @@ def cmd_installers(args):
             print(f"   {C.CY}{installers.human(c.size):>9}{C.X}  {os.path.basename(c.path)}  {C.GR}{folder}{C.X}\n"
                   f"              {C.GR}installed: {c.installed} {c.installed_version}{C.X}")
     if not (args and args[0].lower() in ("clean", "remove", "delete")):
-        hint("\n  Send them to the Recycle Bin: desktidy installers clean   (you confirm each group)")
+        hint(f"\n  Send them to the {system.TRASH}: desktidy installers clean   (you confirm each group)")
         return
     can_ask = INTERACTIVE or sys.stdin.isatty()
     if not can_ask and "--yes" not in args:
@@ -1548,7 +1548,7 @@ def cmd_installers(args):
     if older and can_ask and confirm(f"Recycle the {len(older)} installer(s) older than the installed program?"):
         chosen += older
     files, size = installers.clean(chosen)
-    ok(f"{files} installer(s) sent to the Recycle Bin, {installers.human(size)} freed (restore them from there)")
+    ok(f"{files} installer(s) sent to the {system.TRASH}, {installers.human(size)} freed (restore them from there)")
 
 
 def cmd_archive(args):
@@ -1601,16 +1601,23 @@ def cmd_import(args):
         ok("Photos are imported " + ("without asking" if args[1].lower() == "on" else "after you confirm"))
         return
     cfg = config.load_config()
-    if re.fullmatch(r"[a-z]:?\\?", sub):
+    wanted = args[1] if sub == "--card" and len(args) > 1 else ""
+    if system.WINDOWS and re.fullmatch(r"[a-z]:?\\?", sub):
         root = sub[0].upper() + ":\\"
         label = root
+    elif sub and not wanted and os.path.isdir(os.path.expanduser(unquote(" ".join(args)))):
+        root = os.path.abspath(os.path.expanduser(unquote(" ".join(args))))
+        label = os.path.basename(root) or root
     else:
-        cards = importer.cards(cfg)
+        cards = [c for c in importer.cards(cfg) if not wanted or c["serial"] == wanted]
         if not cards:
             info("No memory card or USB stick with a DCIM folder is plugged in.")
-            hint("  Phones connected by cable have no drive letter: copy from them with Explorer or the phone's app.")
+            hint(f"  Phones connected by cable are not a drive: copy from them with {system.FILE_MANAGER} or the "
+                 "phone's app.")
             return
-        root, label = cards[0]["root"], (cards[0]["label"] or "card") + f" ({cards[0]['letter']}:)"
+        card = cards[0]
+        name = card["label"] or "card"
+        root, label = card["root"], name if name == card["name"] else f"{name} ({card['name']})"
     info(f"Reading the photos on {label}...")
     new = importer.new_media(root, cfg)
     if not new:
@@ -1625,7 +1632,7 @@ def cmd_import(args):
     if not GUI and not confirm("Import them now? (they are copied: the card is not changed)", True):
         return
     if GUI:
-        winapi.notify(f"{APP_NAME}: importing {len(new)} photos/videos", f"From {label}. You can keep working.")
+        system.notify(f"{APP_NAME}: importing {len(new)} photos/videos", f"From {label}. You can keep working.")
     s = importer.run(root, cfg, progress=None if GUI else lambda n, m: print(f"\r  {C.GR}{n}/{len(new)}{C.X}", end=""))
     print("\r", end="")
     text = f"{s['copied']} imported, {s['skipped']} already there" + (f", {s['failed']} failed" if s["failed"] else "")
@@ -1633,7 +1640,7 @@ def cmd_import(args):
     for f in s["folders"][:5]:
         print(f"   {C.GR}{config.short(f)}{C.X}")
     if GUI:
-        winapi.notify(f"{APP_NAME}: photos imported", text)
+        system.notify(f"{APP_NAME}: photos imported", text)
 
 
 def cmd_learn(args):
@@ -1701,22 +1708,30 @@ def cmd_limit(args):
         ok(f"At most {C.BOLD}{value}{C.X} files a day; the others wait for the next day ({tidied_today()} tidied today)")
 
 
+MENU_WHERE = ("Windows 11: under 'Show more options'" if system.WINDOWS else
+              "Files: Scripts > DeskTidy · Nemo and Dolphin: DeskTidy")
+
+
 def cmd_explorer(args):
     from . import explorer
     sub = args[0].lower() if args else ""
+    if not explorer.AVAILABLE:
+        info("There is no Finder menu yet: use  desktidy explain <file>  (you can drag the file into the window)")
+        return
     if sub in ("on", "install"):
         explorer.install()
-        ok("Right-click menu 'DeskTidy' added (Windows 11: under 'Show more options'), notification buttons on")
+        ok(f"Right-click menu 'DeskTidy' added ({MENU_WHERE})" + (", notification buttons on" if system.WINDOWS else ""))
     elif sub in ("off", "remove", "uninstall"):
         ok("Removed" if explorer.uninstall() else "It was not installed")
     else:
-        info("Explorer menu and notification buttons: " + (f"{C.G}on{C.X}" if explorer.installed() else f"{C.Y}off{C.X}"))
+        info(f"Right-click menu in {system.FILE_MANAGER}: "
+             + (f"{C.G}on{C.X}" if explorer.installed() else f"{C.Y}off{C.X}"))
         hint("  desktidy explorer on | off")
 
 
 def cmd_editor(args):
     from . import editor
-    info("Opening the settings in your browser (only this PC can reach it). Ctrl+C or 'Close editor' to finish.")
+    info("Opening the settings in your browser (only this computer can reach it). Ctrl+C or 'Close editor' to finish.")
     editor.serve(open_browser="--no-browser" not in args, say=lambda m: hint("  " + m))
     ok("Editor closed")
 
@@ -1741,7 +1756,7 @@ def cmd_update(args):
         if was_running:
             stop_service()
         if updates.run_update(lambda m: hint("  " + m)):
-            ok("Updated. Open a new Command Prompt to use the new version")
+            ok(f"Updated. Open a new {system.TERMINAL} window to use the new version")
         else:
             fail(f"The update failed: see above, or download it from {release['url']}")
         if was_running:
@@ -1751,11 +1766,11 @@ def cmd_update(args):
 def _notify_result(title_text: str, body: str, ids: list[str] | None = None) -> None:
     if GUI:
         buttons = [("Open", f"desktidy:open?id={ids[-1]}"), ("Undo", f"desktidy:undo?ids={ids[-1]}")] if ids else []
-        winapi.notify(title_text, body, buttons)
+        system.notify(title_text, body, buttons)
 
 
 def cmd_tidy(args):
-    """Tidy one file or folder now (Explorer menu), with the AI if the mode allows it."""
+    """Tidy one file or folder now (right-click menu), with the AI if the mode allows it."""
     from . import classifier, naming
     from . import content as ct
     from .service import Options, Service
@@ -1829,7 +1844,7 @@ def cmd_pin_toggle(args):
 
 
 def cmd_url(args):
-    """desktidy: links (notification buttons, Explorer). Only a fixed list of actions with checked ids."""
+    """desktidy: links (notification buttons, right-click menu). Only a fixed list of actions with checked ids."""
     from . import deadlines, explorer
     parsed = explorer.parse_url(args[0] if args else "")
     if not parsed:
@@ -1844,7 +1859,7 @@ def cmd_url(args):
         from .ops import current_path
         m = next((m for m in read_moves() if move_id(m) == p.get("id")), None)
         if m:
-            winapi.reveal(current_path(m["destination"]))
+            system.reveal(current_path(m["destination"]))
     elif action in ("deadline-done", "deadline-open"):
         item = deadlines.find(p.get("id", ""))
         if not item:
@@ -1853,17 +1868,24 @@ def cmd_url(args):
             deadlines.update(item["id"], done=True)
             _notify_result(APP_NAME, f"Done: {item['what']}. No more reminders.")
         elif item.get("path") and os.path.exists(item["path"]):
-            os.startfile(item["path"])
+            system.open_path(item["path"])
         else:
             explorer.open_console("deadlines")
     elif action == "import":
-        cmd_import([p.get("drive", "") + ":"])
+        cmd_import(["--card", p["card"]] if p.get("card") else [p.get("drive", "") + ":"])
+
+
+def cmd_terminal(args):
+    """A DeskTidy command in a new terminal window (Linux file manager menus)."""
+    from . import explorer
+    if args:
+        explorer.open_console(*args)
 
 
 # ================================================================ commands: more
 def cmd_log(args):
     if "open" in args:
-        winapi.open_path(config.path("log"))
+        system.open_path(config.path("log"))
         return
     n = next((int(a) for a in args if a.isdigit()), 25)
     errors_only = "errors" in args
@@ -1900,37 +1922,33 @@ def cmd_rules(args):
         return
     config.load_config()  # creates rules.json on the first run
     info(f"Opening {config.path('rules')}. Changes apply at the next pass; then: {C.W}desktidy rules check{C.X}")
-    subprocess.Popen(["notepad.exe", config.path("rules")])
+    system.edit_file(config.path("rules"))
 
 
 def cmd_open(args):
-    subprocess.Popen(f'explorer "{config.data_dir()}"')
+    system.open_path(str(config.data_dir()))
 
 
 def cmd_install(args):
     title("Install")
-    bin_dir = config.path("bin")
-    os.makedirs(bin_dir, exist_ok=True)
-    exe = os.path.join(scripts_dir(), "desktidy.exe")
-    launcher = f'"{exe}" %*' if os.path.exists(exe) else f'"{sys.executable}" -m desktidy %*'
-    with open(os.path.join(bin_dir, "desktidy.cmd"), "w", encoding="ascii", newline="\r\n") as f:
-        f.write(f"@echo off\n{launcher}\n")
-    if winapi.add_to_path(bin_dir):
-        ok("'desktidy' command added: it works in NEW Command Prompt windows")
+    if system.install_command(console_command()):
+        ok(f"'desktidy' command added: it works in NEW {system.TERMINAL} windows")
     else:
         info("The 'desktidy' command is already available")
     config.load_config()
     ok(f"Settings: {config.path('rules')}")
     from . import explorer
-    try:
-        explorer.install()
-        ok("Right-click menu in Explorer (DeskTidy) and the buttons of the notifications")
-    except OSError as ex:
-        warn(f"Explorer menu not installed ({ex}): desktidy explorer on")
-    if winapi.register_logon_task(config.TASK_NAME, service_exe(), str(config.data_dir()), start_now=not running()):
-        ok("Starts at every sign-in (Task Scheduler: DeskTidy)")
+    if explorer.AVAILABLE:
+        try:
+            explorer.install()
+            ok(f"Right-click menu in {system.FILE_MANAGER} (DeskTidy: {MENU_WHERE})"
+               + (" and the buttons of the notifications" if system.WINDOWS else ""))
+        except OSError as ex:
+            warn(f"Right-click menu not installed ({ex}): desktidy explorer on")
+    if system.autostart_install(service_command(), str(config.data_dir()), start_now=not running()):
+        ok(f"Starts at every sign-in ({system.AUTOSTART})")
     else:
-        fail("Could not register the startup task")
+        fail("Could not register the start at sign-in")
     if not running() and not wait_for(running, 60, "starting"):
         warn("The service did not start yet: desktidy status")
     if folders.setup_missing(config.load_config()) and sys.stdin.isatty():
@@ -1946,13 +1964,13 @@ def cmd_uninstall(args):
         return
     if running():
         (ok if stop_service() else fail)("Service stopped")
-    if winapi.task_info(config.TASK_NAME).get("exists"):
-        (ok if winapi.schtasks(config.TASK_NAME, "/delete", "/f") else fail)("Startup task removed")
-    if winapi.remove_from_path(config.path("bin")):
+    if system.autostart_info().get("exists"):
+        (ok if system.autostart_remove() else fail)("Start at sign-in removed")
+    if system.uninstall_command():
         ok("'desktidy' command removed")
     from . import explorer
     if explorer.uninstall():
-        ok("Explorer menu and desktidy: links removed")
+        ok("Right-click menu" + (" and desktidy: links" if system.WINDOWS else "") + " removed")
     info(f"To delete everything: remove {config.data_dir()} and the program folder")
 
 
@@ -1965,6 +1983,7 @@ def cmd_about(args):
     row("License", "MIT")
     row("Program", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     row("Data", str(config.data_dir()))
+    row("System", f"{system.NAME} ({sys.platform})")
     row("Python", sys.version.split()[0])
 
 
@@ -2009,11 +2028,12 @@ COMMANDS = [  # (number, name, function, description, aliases, section)
     (33, "log", cmd_log, "activity log  (log errors · log 100)", ["errors"], "More"),
     (34, "rules", cmd_rules, "edit rules.json  (rules check)", ["config", "settings"], "More"),
     (35, "open", cmd_open, "open the data folder", ["data"], "More"),
-    (36, "install", cmd_install, "command, autostart, Explorer menu", [], "More"),
-    (37, "uninstall", cmd_uninstall, "remove autostart, the command and the Explorer menu", [], "More"),
+    (36, "install", cmd_install, "command, start at sign-in, right-click menu", [], "More"),
+    (37, "uninstall", cmd_uninstall, "remove the start at sign-in, the command and the menu", [], "More"),
     (38, "about", cmd_about, "version and author", ["version", "info"], "More"),
 ]
-HIDDEN = {"handsoff": cmd_handsoff, "pin-toggle": cmd_pin_toggle, "url": cmd_url}  # Explorer menu and links
+HIDDEN = {"handsoff": cmd_handsoff, "pin-toggle": cmd_pin_toggle, "url": cmd_url,  # right-click menu and links
+          "terminal": cmd_terminal}
 
 
 def find_command(name: str):
@@ -2046,7 +2066,8 @@ def menu() -> None:
 
 def cmd_help(args):
     title("Commands")
-    print(f"  In the console type the {C.W}number{C.X} or the {C.W}name{C.X}; from cmd: {C.W}desktidy <command>{C.X}")
+    print(f"  In the console type the {C.W}number{C.X} or the {C.W}name{C.X}; from a {system.TERMINAL}: "
+          f"{C.W}desktidy <command>{C.X}")
     menu()
     print(f"""
   {C.BOLD}Examples{C.X}
@@ -2054,7 +2075,7 @@ def cmd_help(args):
     desktidy pause 2h               desktidy undo invoice
     desktidy stop                   desktidy ai moderate
     desktidy autostart off          desktidy spend credit 4.85
-    desktidy pin pasta recipes      desktidy explain "C:\\Users\\me\\Downloads\\scan0001.pdf"
+    desktidy pin pasta recipes      desktidy explain {EXAMPLE}
     desktidy ai ai-only             desktidy advice new
     desktidy find bolletta luce     desktidy deadlines
     desktidy limit 30               desktidy ai max unlimited
@@ -2066,13 +2087,23 @@ def cmd_help(args):
     - Every move and rename is logged: desktidy where · desktidy undo.{C.X}""")
 
 
+EXAMPLE = (r'"C:\Users\me\Downloads\scan0001.pdf"' if system.WINDOWS else
+           "~/Downloads/scan0001.pdf")
+
+
 def split_line(line: str) -> list[str]:
-    """Like the Windows command line: spaces separate, quotes keep together."""
+    r"""Like the command line of this system: spaces separate, quotes keep together; on macOS and Linux a
+    backslash escapes a space too (paths dragged into Terminal: My\ File.pdf)."""
+    if not system.WINDOWS:
+        try:
+            return shlex.split(line)
+        except ValueError:
+            pass
     return [a.strip('"') for a in re.findall(r'"[^"]*"|\S+', line)]
 
 
 def run(argv: list[str]) -> int:
-    if "--pause" in argv:  # started in its own window (Explorer menu, notification): keep it open at the end
+    if "--pause" in argv:  # started in its own window (right-click menu, notification): keep it open at the end
         try:
             return run([a for a in argv if a != "--pause"])
         finally:
@@ -2104,7 +2135,7 @@ def run(argv: list[str]) -> int:
 def console() -> int:
     global INTERACTIVE
     INTERACTIVE = True
-    os.system("cls")
+    system.clear_screen()
     banner()
     menu()
     hint("\n  Type a number or a command (options too: 'pause 30m'). 'menu' shows this list again, '99' exits.")
@@ -2139,7 +2170,7 @@ def console() -> int:
             menu()
             continue
         if name in ("cls", "clear"):
-            os.system("cls")
+            system.clear_screen()
             banner()
             continue
         if name in ("help", "?", "h"):
@@ -2159,7 +2190,7 @@ def console() -> int:
 
 
 def main_gui() -> None:
-    """desktidyw.exe: commands from the Explorer menu, the notification buttons and the tray, without a console.
+    """desktidyw: commands from the right-click menu, the notification buttons and the tray, without a console.
     Nobody can type an answer, so nothing is asked; problems are shown in a message box."""
     global GUI
     GUI = True
@@ -2169,11 +2200,11 @@ def main_gui() -> None:
         with redirect_stdout(buffer):
             run(sys.argv[1:])
     except Exception as ex:
-        winapi.message(f"{type(ex).__name__}: {ex}", APP_NAME, error=True)
+        system.message(f"{type(ex).__name__}: {ex}", APP_NAME, error=True)
         return
     problems = [line.strip()[4:] for line in buffer.getvalue().splitlines() if line.strip().startswith("[-]")]
     if problems:
-        winapi.message("\n".join(problems), APP_NAME, error=True)
+        system.message("\n".join(problems), APP_NAME, error=True)
 
 
 def main() -> None:

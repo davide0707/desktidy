@@ -27,9 +27,8 @@ import urllib.request
 from dataclasses import dataclass, field, fields
 from datetime import date, datetime
 
-from . import classifier, config, folders, naming, providers, usage
+from . import classifier, config, folders, naming, providers, system, usage
 from . import content as ct
-from .winapi import api_key
 
 EXCERPT_CHARS = 1200
 KEY_TERMS = 12
@@ -41,7 +40,7 @@ CONFIDENCE = {"h": "high", "m": "medium", "l": "low"}
 LOCAL_KEY = "local"               # "key" used for services that need none (Ollama)
 
 INSTRUCTIONS = (
-    "You sort the files of a Windows PC into folders. For each file #n pick the number of the most specific "
+    f"You sort the files of {system.MACHINE} into folders. For each file #n pick the number of the most specific "
     "folder that fits its CONTENT, or 0 if none really fits. c: h = sure, m = likely, l = guess. name: a short "
     "descriptive file name in the file's own language, 2-6 words joined by _, no extension: always for files "
     "marked 'rename'; for files marked 'name?' only if the current name is misleading or says nothing about the "
@@ -180,7 +179,7 @@ def ready(cfg: config.Config, log, files: bool = True) -> str | None:
     if config.ai_mode(cfg) == "off" or not available(cfg):
         return None
     p = providers.current(cfg)
-    key = api_key(p.key_env) if p.key_env else LOCAL_KEY
+    key = system.api_key(p.key_env) if p.key_env else LOCAL_KEY
     if not key and p.id == "custom":
         key = LOCAL_KEY  # many local servers need no key
     if not key:
@@ -531,7 +530,7 @@ def submit(items: list[Item], cfg: config.Config, key: str, log) -> dict | None:
 
 def collect(job: dict, log) -> tuple[bool, dict[int, Answer] | None]:
     """(finished?, answers). Unfinished batches are checked again later; failed ones give None."""
-    key = api_key("ANTHROPIC_API_KEY")
+    key = system.api_key("ANTHROPIC_API_KEY")
     if not key:
         return False, None
     anthropic = _anthropic()
