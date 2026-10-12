@@ -57,6 +57,8 @@ def _refuse(path: str, cfg: config.Config) -> str | None:
         return f"{config.short(path)} holds DeskTidy's own data"
     if os.path.basename(path).startswith("!"):
         return f"{os.path.basename(path)} starts with ! (hands off)"
+    if folders.app_owned(path):
+        return f"{os.path.basename(path)} belongs to a program (settings, saves): moving it could break it"
     return None
 
 
@@ -206,7 +208,11 @@ def _do(step: dict) -> None:
 def _undo(step: dict) -> None:
     op = step["op"]
     if op == "move":
-        _move(step["dst"], step["src"])
+        back = step["src"]
+        if os.path.exists(back) and os.path.normcase(back) != os.path.normcase(step["dst"]):
+            back = _free(back, os.path.isdir(step["dst"]))  # something new took the old name: name_v2
+        _move(step["dst"], back)
+        step["restored"] = back
     elif op == "mkdir":
         if os.path.isdir(step["path"]) and not os.listdir(step["path"]):
             os.rmdir(step["path"])
@@ -334,15 +340,24 @@ def apply(p: Plan, cfg: config.Config, tip: dict | None = None) -> dict:
 
 
 def undo_last(cfg: config.Config) -> dict | None:
-    """Revert the latest applied change that is not undone yet."""
+    """Revert the latest applied change that is not undone yet. An item that can't be put back (moved or deleted
+    since) is skipped and listed in entry["skipped"]; the rest is reverted."""
     entries = journal()
     entry = next((e for e in reversed(entries) if not e.get("undone")), None)
     if not entry:
         return None
+    skipped = []
     for step in reversed(entry["steps"]):
-        _undo(step)
+        try:
+            _undo(step)
+        except OSError:
+            gone = step["op"] == "move" and not os.path.exists(step["dst"])
+            skipped.append(f"{os.path.basename(step['dst'])} is no longer in {config.short(os.path.dirname(step['dst']))}"
+                           " (moved or put back since)" if gone else describe(step))
     _revert(entry["changes"], cfg)
-    _relink([(s["dst"], s["src"]) for s in reversed(entry["steps"]) if s["op"] in ("move", "follow")])
+    _relink([(s["dst"], s.get("restored", s["src"])) for s in reversed(entry["steps"])
+             if s["op"] == "follow" or s.get("restored")])
+    entry["skipped"] = skipped
     entry["undone"] = datetime.now().isoformat(timespec="seconds")
     config.write_json(config.path("ops"), entries)
     return entry

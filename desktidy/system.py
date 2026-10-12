@@ -14,6 +14,15 @@ import sys
 WINDOWS = sys.platform == "win32"
 MACOS = sys.platform == "darwin"
 LINUX = not (WINDOWS or MACOS)  # Linux and the other Unix-like systems
+FROZEN = bool(getattr(sys, "frozen", False))  # the Windows build (desktidy.exe + desktidyw.exe), not Python + pip
+
+
+def program_home() -> str:
+    """Where the Windows build lives once installed: %LOCALAPPDATA%\\Programs\\DeskTidy (no admin rights needed),
+    never the folder the zip was extracted to (Downloads is tidied by DeskTidy itself)."""
+    import os
+    base = os.environ.get("LOCALAPPDATA") or os.path.join(os.path.expanduser("~"), "AppData", "Local")
+    return os.path.join(base, "Programs", "DeskTidy")
 
 if WINDOWS:
     from . import winapi as _os

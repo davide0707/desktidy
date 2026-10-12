@@ -27,7 +27,7 @@ CLASSES = "Software\\Classes"
 MENU = "DeskTidy"
 PROTOCOL = "desktidy"
 CONSOLE_ACTIONS = {"where", "advice", "deadlines", "learn", "update", "console", "groups", "installers",
-                   "versions", "find", "status", "spend"}
+                   "versions", "find", "status", "spend", "week", "organize", "duplicates"}
 ICON = config.PACKAGE_DIR / "icon.ico"
 ICON_PNG = config.PACKAGE_DIR / "icon.png"
 AVAILABLE = not system.MACOS
@@ -59,6 +59,8 @@ def console_command() -> list[str]:
 
 def service_command() -> list[str]:
     """The background service, without a window."""
+    if system.FROZEN:  # the Windows build has no desktidy-service.exe: desktidyw.exe --service
+        return [os.path.join(_scripts(), "desktidyw.exe"), "--service"]
     exe = os.path.join(_scripts(), "desktidy-service.exe" if system.WINDOWS else "desktidy-service")
     if os.path.exists(exe):
         return [exe]
@@ -85,8 +87,12 @@ def entries() -> dict[str, dict[str, str]]:
               ("3handsoff", "Hands off / allow (!)", f'{gui} handsoff "%1"')],
         "Directory": [("1pin", "Pin / unpin this folder", f'{gui} pin-toggle "%1"'),
                       ("2explain", "Explain...", f'{console} explain "%1" --pause'),
-                      ("3versions", "Old versions here...", f'{console} versions "%1" --pause'),
-                      ("4handsoff", "Hands off / allow (!)", f'{gui} handsoff "%1"')],
+                      ("3organize", "Organize this folder...", f'{console} organize "%1" --pause'),
+                      ("4versions", "Old versions here...", f'{console} versions "%1" --pause'),
+                      ("5handsoff", "Hands off / allow (!)", f'{gui} handsoff "%1"')],
+        # right-click on the empty space of an open folder, or of the Desktop
+        "Directory\\Background": [("1organize", "Organize this folder...", f'{console} organize "%V" --pause')],
+        "DesktopBackground": [("1organize", "Organize the Desktop...", f'{console} organize "%V" --pause')],
     }
     for target, items in menus.items():
         base = f"{target}\\shell\\{MENU}"
@@ -102,6 +108,7 @@ ACTIONS = [  # (id, label, command, for files, for folders, in a terminal)
     ("tidy", "Tidy now", "tidy", True, False, False),
     ("explain", "Explain", "explain", True, True, True),
     ("pin", "Pin or unpin this folder", "pin-toggle", False, True, False),
+    ("organize", "Organize this folder", "organize", False, True, True),
     ("versions", "Old versions here", "versions", False, True, True),
     ("handsoff", "Hands off or allow (!)", "handsoff", True, True, False),
 ]
@@ -136,9 +143,14 @@ def linux_menus(data: str | None = None) -> dict[str, str]:
 
 
 # ---------------------------------------------------------------- install / uninstall
+MENU_TARGETS = ("*", "Directory", "Directory\\Background", "DesktopBackground")
+
+
 def install(root: str = CLASSES) -> None:
     if system.WINDOWS:
         from . import winapi
+        for target in MENU_TARGETS:  # a clean menu: no item left over from an older version
+            winapi.reg_delete_tree(f"{root}\\{target}\\shell\\{MENU}")
         for key, values in entries().items():
             winapi.reg_write(f"{root}\\{key}", values)
     elif system.LINUX:
@@ -155,7 +167,7 @@ def uninstall(root: str = CLASSES) -> bool:
     removed = False
     if system.WINDOWS:
         from . import winapi
-        for key in (PROTOCOL, f"*\\shell\\{MENU}", f"Directory\\shell\\{MENU}"):
+        for key in (PROTOCOL, *(f"{target}\\shell\\{MENU}" for target in MENU_TARGETS)):
             removed |= winapi.reg_delete_tree(f"{root}\\{key}")
     elif system.LINUX:
         menus = linux_menus()

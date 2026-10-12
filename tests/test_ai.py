@@ -29,6 +29,24 @@ class TestRequest(IsolatedTest):
         return ai.item_for(p, False, os.path.dirname(p), an, classifier.decide(p, False, self.cfg, an),
                            naming.plan(an, self.cfg), self.cfg)
 
+    def test_always_ai_names_what_the_rules_would_rename(self):
+        text = "Fattura n. 2231 del 12/10/2026\nCliente: Mario Rossi - Codice cliente 55120\n" + "Totale da pagare. " * 30
+        offline = self.item("scan0001.txt", text)
+        self.assertTrue(offline.new_stem)                    # an offline title: the AI is not asked for a name
+        self.assertFalse(offline.ask_name)
+        self.cfg = self.config(ai={"mode": "all", "provider": "groq", "candidate_folders": [{"path": "{D}", "depth": 2}]})
+        always = self.item("scan0001.txt", text)
+        self.assertTrue(always.ask_name)                     # always AI: the AI names it
+        self.assertIsNone(always.new_stem)
+        self.assertEqual(always.fallback_stem, offline.new_stem)   # the offline title if the AI has no answer
+        answer = ai.Answer(None, "high", "Fattura_2231_Acme_Srl_2026-10-12", "invoice")
+        self.assertEqual(ai.name_for(always, answer), "Fattura_2231_Acme_Srl_2026-10-12")
+
+    def test_dated_documents_get_kind_number_issuer_and_date(self):
+        params, _ = ai.build([self.item("a.txt", "boil the pasta " * 10)], self.cfg)
+        self.assertIn("YYYY-MM-DD", params["system"])
+        self.assertIn("Fattura_2231_Acme_Srl_2026-10-12", params["system"])
+
     def test_two_files_share_one_request(self):
         items = [self.item("a.txt", "boil the pasta, add tomato sauce and basil " * 10),
                  self.item("b.txt", "the derivative of a composite function " * 10)]

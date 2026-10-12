@@ -15,7 +15,7 @@ keywords = ["file-organizer", "downloads", "desktop", "automation", "windows", "
             "gemini", "groq", "ollama", "openai", "productivity", "declutter", "file-management", "full-text-search",
             "deadlines", "photo-import", "system-tray"]
 classifiers = [
-    "Development Status :: 5 - Production/Stable",
+    "Development Status :: 4 - Beta",
     "Environment :: Console",
     "Environment :: MacOS X",
     "Environment :: Win32 (MS Windows)",
@@ -51,7 +51,7 @@ desktidy-service = "desktidy.service:main"
 desktidyw = "desktidy.gui:main"
 
 [tool.setuptools]
-packages = ["desktidy"]
+packages = ["desktidy", "desktidy.cli"]
 
 [tool.setuptools.package-data]
 desktidy = ["default_rules.json", "ocr_windows.ps1", "ocr_macos.js", "icon.ico", "icon.png", "editor.html"]

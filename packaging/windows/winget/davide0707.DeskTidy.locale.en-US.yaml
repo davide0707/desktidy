@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
+PackageIdentifier: davide0707.DeskTidy
+PackageVersion: {VERSION}
+PackageLocale: en-US
+Publisher: Di Filippo Davide
+PublisherUrl: https://github.com/davide0707
+PackageName: DeskTidy
+PackageUrl: https://github.com/davide0707/desktidy
+License: MIT
+LicenseUrl: https://github.com/davide0707/desktidy/blob/main/LICENSE
+ShortDescription: Keeps Downloads, Desktop and Documents tidy - understands each file, renames it and files it in the right folder.
+Description: |-
+  DeskTidy watches Downloads, the Desktop and Documents, understands what every new file is about (offline, or with
+  an AI service of your choice, free ones included), gives it a proper name and files it in the right folder. Every
+  move can be undone. After installing, run: desktidy install
+Tags:
+  - file-organizer
+  - downloads
+  - desktop
+  - ocr
+  - ai
+ReleaseNotesUrl: https://github.com/davide0707/desktidy/releases/tag/v{VERSION}
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0

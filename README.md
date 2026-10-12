@@ -41,8 +41,9 @@ before anything is moved ([HOUSE_RULES.md](HOUSE_RULES.md)).
    downloads, Office lock files, hidden and system files, shortcuts and launchers are skipped.
 4. **Nothing is lost.** Every move and rename is logged (`desktidy where`) and can be undone (`desktidy undo`).
    Identical duplicates go to the Recycle Bin / Trash, never deleted.
-5. **Private stays private.** IDs, payslips, bills, CVs, photos and screenshots are never sent to the AI. The AI is
-   optional, with a daily limit and a budget.
+5. **Private stays private, unless you choose otherwise.** IDs, payslips, bills and CVs go to the AI only if you
+   choose *Always AI* (`desktidy ai all`); with Ollama the AI runs on your computer. Photos and screenshots never.
+   The AI is optional, with a daily limit and a budget.
 6. **You're in charge.** `desktidy pause 1h`, `desktidy stop`, `desktidy preview` (see what it would do),
    `desktidy limit 30` (at most 30 files a day).
 
@@ -63,13 +64,17 @@ before anything is moved ([HOUSE_RULES.md](HOUSE_RULES.md)).
 - **Tidy-up tools.** The *To_Sort* pile grouped into folders, old versions of a document set aside, installers of
   programs you already installed found (GBs back), an automatic archive for what lies untouched for months, photos
   imported from memory cards sorted by date.
+- **Organize a crowded folder.** 50 files on the Desktop? `desktidy organize desktop`: the AI sees that 10 are
+  about your thesis and 6 about a trip, and proposes a new folder for each (or a folder you already have). You see
+  the plan, apply all of it or one group, and `organize undo` puts everything back.
 - **Advice on how to organise.** Once DeskTidy has an overview of your files, the AI suggests better ways to organise
   them, and `desktidy advice apply 2` does it for you after a preview (and `advice undo` reverts it).
 - **Part of your desktop.** Right-click menu in the file manager, notifications with buttons, an icon next to the
   clock on Windows, and all the settings in a page of your browser (`desktidy editor`).
 - **Any AI, free ones included.** **Groq, Google Gemini, Mistral, OpenRouter** (free plans), **Ollama** (free, on your
-  computer), **Claude** or **OpenAI** (paid), or any OpenAI-compatible server. Four levels: `off`, `limited`,
-  `moderate`, `ai-only`. Daily limits you choose, or unlimited.
+  computer), **Claude** or **OpenAI** (paid), or any OpenAI-compatible server. You choose: **rules only** (`off`,
+  nothing leaves your computer) or **always AI** (`all`: every file, bills and private documents included, named by
+  the AI), with three levels in between. Daily limits you choose, or unlimited.
 - **Cheap by design.** A short list of likely folders instead of the whole tree, several files per request, short
   excerpts, and Claude's Batch API at half price. **Measured: ~5.7× cheaper than sending the folder tree with every
   file** (see below).
@@ -230,6 +235,7 @@ added at the top of your rules, so it wins from then on.
 | Command | What it does |
 |---|---|
 | `desktidy groups` | finds groups of related files in the *To_Sort* pile ("4 files about nucleo, gpio") and proposes an existing folder that looks like them, or a new one; `groups apply 1 --pin` moves them and pins the folder |
+| `desktidy organize` | lists the crowded folders among yours (Desktop, Downloads, Documents, *To_Sort*, pinned folders: offline, in a moment). `organize desktop` (or a path, or `organize all`) asks the AI to group what lies loose there: a new folder for each group, or an existing folder that fits. `organize apply 2` or `apply all` after a preview (`--pin` pins the new folders), `organize undo` puts everything back. Photos and screenshots are never sent, private files only in the `all` AI mode; what your rules place with certainty is placed by the rules, offline |
 | `desktidy versions [folder]` | `Report.docx`, `Report_v2.docx`, `Report_final.docx`, `Report (1).docx`: the newest stays, the others go into `_old_versions` (`versions apply all`). Same name but different content (`Lesson_1`, `Lesson_2`) is never taken for a version |
 | `desktidy installers` | setup files of programs that are already installed (`.exe`/`.msi` on Windows, `.dmg`/`.pkg` on macOS, `.deb`/`.rpm` on Linux), compared by product name and version with the installed programs; newer installers and recent downloads are kept. `installers clean` sends them to the Trash after you confirm |
 | `desktidy archive` | items untouched for 180 days on the Desktop and in *To_Sort* go to `Archive/<year>`, optionally zipped. Off by default: `archive on` |
@@ -239,8 +245,18 @@ Every move made by these tools is logged and can be undone with `desktidy undo`.
 
 ## AI: free or paid, your choice
 
-DeskTidy asks an AI only about the files the offline engine can't place (or places with low confidence, in `moderate`
-mode; every file in `ai-only`). Choose the service with `desktidy ai provider <name>`, then `desktidy key`:
+The setup asks the big question: **rules only** or **always AI**. Change it any time:
+
+| Mode | The AI reads | Per day |
+|---|---|---|
+| `off` (`desktidy ai rules`) | nothing: the offline engine decides everything, nothing leaves your computer | 0 |
+| `limited` | the files the offline engine can't place | 10 |
+| `moderate` | also the ones it places with low confidence | 30 |
+| `ai-only` | every file except private ones; it also fixes names that don't match the content | 100 |
+| `all` (`desktidy ai all`) | **always AI**: every file, bills, payslips and IDs included, and the AI names them (`scan0001.pdf` becomes `Fattura_2231_Acme_Srl_2026-10-12.pdf`). Photos, screenshots and programs stay offline. Before private documents go to a service on the internet DeskTidy says so and asks; with Ollama they never leave your computer | 100 |
+
+When the AI is not available (no key, no internet, daily limit reached) the offline engine takes over. Choose the
+service with `desktidy ai provider <name>`, then `desktidy key`:
 
 | Service | Cost | Privacy | Reads images | Default model |
 |---|---|---|---|---|
@@ -289,14 +305,15 @@ Built-in brakes: the daily limits, a total budget, an estimated credit (`desktid
 automatic pause when the service reports the credit is exhausted. `desktidy spend` shows today, the last 7 days, the
 month and the total.
 
-**Never sent**: files matched by a `private` rule, photos, screenshots, programs. **Sent for the others**: the excerpt
+**Never sent**: photos, screenshots, programs, and files matched by a `private` rule unless you chose `all`.
+**Sent for the others**: the excerpt
 above, the file name and the short folder list. API keys (`GROQ_API_KEY`, `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`...)
 are kept in your Windows user environment, or on macOS and Linux in `keys.json` in DeskTidy's data folder, readable
 only by you. An environment variable with the same name works too.
 
 ### Advice on how to organise
 
-In `ai-only` mode, once DeskTidy has tidied enough files to have an overview (30 by default), it asks the AI how your
+In the `ai-only` and `all` modes, once DeskTidy has tidied enough files to have an overview (30 by default), it asks the AI how your
 files and folders could be organised better, about once a week, and tells you with a notification. `desktidy advice`
 shows the ideas (merge, split, rename, move, archive, create or pin a folder, a naming convention), each with the
 folders involved. `desktidy advice new` asks right away in any AI mode.
@@ -310,6 +327,21 @@ latest one.
 One small request (~2,000 tokens for 100 folders): folder names, how many files each holds and of which types, the
 year of the latest change, two file names per folder (none from private folders), and what DeskTidy saw recently.
 Never the content of a file. Even without an AI, `desktidy advice` lists what it finds offline.
+
+### Organizing a crowded folder
+
+`desktidy organize` lists the folders where loose items pile up (10 or more: `organize.min_items` in `rules.json`).
+`desktidy organize desktop` reads what lies there and asks the AI to group it: for each group a title, the files,
+and where they go, a new folder (inside that folder; for Downloads and *To_Sort*, in Documents) or one you already
+have. Nothing moves until you apply it: `organize apply 2` does one group, `apply all` the whole plan, each after a
+preview of every move. `organize undo` puts everything back, even if you moved a few files in the meantime (those
+stay where you put them), and `desktidy undo <name>` restores a single file.
+
+What the AI reads, per item: the name, the kind, a few key terms and the first words of the text (about 60 tokens),
+one request per 60 items. **Never sent**: photos, screenshots, and files matched by a `private` rule unless you chose
+the `all` AI mode. What your rules
+already place with certainty goes there offline. **Never moved**: names starting with `!`, shortcuts, pinned
+folders and folders holding one, folders with a Python environment inside.
 
 ## Part of your desktop
 
@@ -344,9 +376,10 @@ Type `desktidy` for the console (use the number or the name), or `desktidy <comm
 | `rename smart · generic · off` | how bold renaming is |
 | `deadlines` · `deadlines done · open · remove <n>` · `deadlines add <date> <what>` | bills and deadlines |
 | `groups [apply <n> --pin]` · `versions [apply <n> · all]` | the to-sort pile · old versions |
+| `organize` · `organize <folder · n · all>` · `organize apply <n · all> [--pin]` · `organize undo` | crowded folders, grouped by the AI |
 | `installers [clean]` · `archive [on · off · now · after <days> · zip on]` · `import [E: · /Volumes/CARD] · import auto on` | free space · archive · photos |
 | `learn [accept · reject <n>]` | rules learned from your corrections |
-| `ai off · limited · moderate · ai-only` · `ai max <n · unlimited · auto>` · `ai provider` · `ai model <id>` | how much AI, which service and model |
+| `ai rules · limited · moderate · ai-only · all` · `ai max <n · unlimited · auto>` · `ai provider` · `ai model <id>` | how much AI, which service and model |
 | `key` · `key test` · `key remove` · `spend` · `spend credit <usd>` · `spend budget <usd>` | API key, AI spend |
 | `advice` · `advice new` · `advice apply <n>` · `advice undo` · `advice open · pin <n>` | ideas to organise files and folders |
 | `editor` · `explorer on · off` · `update` | settings in the browser · right-click menu · new versions |
@@ -400,7 +433,7 @@ Everything DeskTidy writes stays on your computer, in its data folder (`desktidy
 | `%LOCALAPPDATA%\DeskTidy` | `~/Library/Application Support/DeskTidy` | `~/.local/share/desktidy` |
 
 In it: `rules.json`, `moves.csv` (every move and rename, opens in Excel or LibreOffice), `desktidy.log`, `index.db`
-(the search index), `deadlines.json`, `learned.json`, `folder_ops.json` (applied advice, for undo), `imports.json`,
+(the search index), `deadlines.json`, `learned.json`, `folder_ops.json` (applied advice and organize, for undo), `organize.json` (the latest plan), `imports.json`,
 `ai_usage.json`, `pinned.json`, and on macOS and Linux `keys.json`. None of it lives in the program folder, so updating
 DeskTidy never touches it. `desktidy uninstall` removes the start at sign-in, the command and the right-click menu,
 and leaves your files alone.
@@ -454,6 +487,7 @@ desktidy/
   naming.py       smart renaming                folders.py      folder catalog, similarity, pinned folders
   ai.py           compact AI requests           providers.py    Claude, OpenAI, Gemini, Groq, Mistral, Ollama...
   advice.py       folder overview and advice    ops.py          applying advice safely, undo
+  organize.py     crowded folders, AI groups
   index.py        full-text search              deadlines.py    deadlines and reminders
   learn.py        rules from your corrections   groups.py       the to-sort pile, grouped
   versions.py     old versions of a document    installers.py   installers of installed programs

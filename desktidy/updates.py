@@ -15,7 +15,7 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timedelta
 
-from . import REPO_URL, __version__, config
+from . import REPO_URL, __version__, config, system
 
 API = REPO_URL.replace("https://github.com/", "https://api.github.com/repos/") + "/releases/latest"
 
@@ -74,7 +74,9 @@ def check(notify=None) -> dict | None:
 
 
 def install_kind() -> tuple[str, list[list[str]]]:
-    """How DeskTidy was installed, and the commands that update it."""
+    """How DeskTidy was installed, and the commands that update it (none for the Windows build: download it)."""
+    if system.FROZEN:
+        return "the Windows build", []
     program = config.PACKAGE_DIR.parent
     if (program / ".git").exists():
         return "git clone", [["git", "-C", str(program), "pull", "--ff-only"],

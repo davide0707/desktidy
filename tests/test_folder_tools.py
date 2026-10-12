@@ -4,6 +4,7 @@ versions of a document, and learning rules from the user's corrections. All insi
 import json
 import os
 import time
+from datetime import datetime, timedelta
 from unittest import mock
 
 from desktidy import config, folders, groups, learn, ops, service, versions
@@ -146,9 +147,87 @@ class TestLearn(IsolatedTest):
             self.assertEqual(json.load(f)["rules"][0]["destination"], "{D}\\Study\\Lab")
         self.assertEqual(learn.load()["proposals"], [])
 
+    def test_a_correction_into_a_private_folder_makes_a_private_rule(self):
+        cfg = self.config()
+        text = "Monthly salary statement, overtime hours and holiday allowance for the employee. " * 6
+        for name in ("march_statement.txt", "april_statement.txt"):
+            wrong = self.write(name, text, folder="dest\\Study\\Notes")
+            service.record("MOVED", self.path("in", name), wrong, "no rule matched")
+            os.replace(wrong, self.path("dest", "Personal", "Payslips", name))   # a private rule's folder
+        rule = learn.scan(cfg)[0]["rule"]
+        self.assertTrue(rule.get("private"))
+
+    def test_corrections_into_year_folders_make_a_dated_rule(self):
+        cfg = self.config()
+        rules = list(cfg["rules"]) + [{"name": "Bills", "name_words": ["bill"], "destination": "{D}\\Bills\\{YEAR}"}]
+        cfg = self.config(rules=rules)
+        text = "Water supply statement, meter reading and consumption in cubic metres. " * 6
+        for name, year in (("water_march.txt", "2025"), ("water_april.txt", "2026")):
+            wrong = self.write(name, text, folder="dest\\Study\\Notes")
+            service.record("MOVED", self.path("in", name), wrong, "no rule matched")
+            os.replace(wrong, self.path("dest", "Bills", year, name))
+        proposals = learn.scan(cfg)
+        self.assertEqual(len(proposals), 1)                                # 2025 and 2026 count together
+        self.assertEqual(proposals[0]["rule"]["destination"], "{D}\\Bills\\{YEAR}")
+
     def test_a_file_left_where_it_was_teaches_nothing(self):
         cfg = self.config()
         p = self.write("x.txt", "hello " * 30, folder="dest\\Study\\Notes")
         service.record("MOVED", self.path("in", "x.txt"), p, "test")
         self.assertEqual(learn.scan(cfg), [])
         self.assertEqual(learn.load()["corrections"], [])
+
+
+class TestLearnFromTheAI(IsolatedTest):
+    """Five files the AI put in the same folder, still there days later: a rule, so the next ones go offline."""
+
+    TEXT = "Telescope eyepiece, focal length, mirror collimation and star charts for the night. " * 6
+
+    def ai_moves(self, count, days_ago=5, folder="dest\\Hobby\\Astronomy", reason="AI (high): astronomy"):
+        when = (datetime.now() - timedelta(days=days_ago)).strftime("%Y-%m-%d %H:%M:%S")
+        rows = []
+        for i in range(count):
+            p = self.write(f"sky_notes_{i}.txt", self.TEXT, folder=folder)
+            rows.append({"time": when, "action": "MOVED", "source": self.path("in", f"sky_notes_{i}.txt"),
+                         "destination": p, "reason": reason})
+        return rows
+
+    def scan(self, cfg, rows):
+        with mock.patch.object(service, "read_moves", return_value=rows):
+            return learn.scan(cfg)
+
+    def test_a_rule_from_the_ai(self):
+        cfg = self.config()
+        proposals = self.scan(cfg, self.ai_moves(5))
+        self.assertEqual(len(proposals), 1)
+        p = proposals[0]
+        self.assertEqual(p["source"], "ai")
+        self.assertEqual(p["count"], 5)
+        self.assertEqual(p["rule"]["destination"], "{D}\\Hobby\\Astronomy")
+        self.assertIn("eyepiece", [w.lower() for w in p["rule"]["topics"]])
+        self.assertNotIn("private", p["rule"])
+        self.assertTrue(p["rule"]["name"].startswith("Learned from the AI"))
+        self.assertEqual(self.scan(cfg, self.ai_moves(5)), [])            # each move once, each rule once
+
+    def test_not_enough_not_settled_not_the_ai(self):
+        cfg = self.config()
+        self.assertEqual(self.scan(cfg, self.ai_moves(4)), [])             # 4 < 5
+        self.assertEqual(self.scan(cfg, self.ai_moves(5, days_ago=1, folder="dest\\Hobby\\A")), [])  # too recent
+        self.assertEqual(self.scan(cfg, self.ai_moves(5, folder="dest\\Hobby\\B", reason="no rule matched")), [])
+
+    def test_what_the_rules_already_place_teaches_nothing(self):
+        cfg = self.config()
+        rows = []
+        when = (datetime.now() - timedelta(days=5)).strftime("%Y-%m-%d %H:%M:%S")
+        for i in range(5):
+            p = self.write(f"calculus_{i}.txt", "derivative integral limit theorem " * 20, folder="dest\\Study\\Maths")
+            rows.append({"time": when, "action": "MOVED", "source": "x", "destination": p, "reason": "AI (high): maths"})
+        self.assertEqual(self.scan(cfg, rows), [])
+        self.assertEqual(learn.load()["ai_examples"], [])
+
+    def test_a_file_moved_since_is_not_an_example(self):
+        cfg = self.config()
+        rows = self.ai_moves(5)
+        os.remove(rows[0]["destination"])
+        self.assertEqual(self.scan(cfg, rows), [])                         # 4 left
+        self.assertEqual(len(learn.load()["ai_examples"]), 4)

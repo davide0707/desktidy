@@ -5,7 +5,7 @@ import time
 from datetime import datetime
 from unittest import mock
 
-from desktidy import config, folders, service
+from desktidy import classifier, config, folders, service
 from tests.helpers import IsolatedTest
 
 try:
@@ -125,7 +125,7 @@ class TestAIBatch(ServiceTest):
 
     def setUp(self):
         super().setUp()
-        if ai is None:
+        if ai is None or not classifier.AI_AVAILABLE:  # desktidy.ai imports without it: the Claude provider needs it
             self.skipTest("anthropic is not installed")
         self.cfg = self.config(ai={"mode": "limited", "delivery": "batch", "gather_seconds": 0,
                                    "candidate_folders": [{"path": "{D}", "depth": 2}]})

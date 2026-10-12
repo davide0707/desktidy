@@ -162,7 +162,7 @@ class TestImport(IsolatedTest):
         os.replace(cfg.source, config.path("rules"))
         card = {"id": "1A2B3C4D", "name": "EOS", "label": "EOS", "serial": "1A2B3C4D", "root": root}
         with mock.patch.object(importer.system, "removable_drives", return_value=[card]), \
-                mock.patch.object(cli.system, "notify"), mock.patch.object(cli, "GUI", True), \
+                mock.patch.object(cli.system, "notify"), mock.patch.object(cli.ui, "GUI", True), \
                 mock.patch("sys.stdout", io.StringIO()):
             cli.run(["url", "desktidy:import?card=1A2B3C4D"])
         self.assertTrue(os.path.exists(self.dest("Pictures", "2025", "2025-07", "IMG_0001.JPG")))
@@ -187,6 +187,21 @@ class TestExplorer(IsolatedTest):
         self.assertTrue(explorer.uninstall(self.ROOT))
         self.assertFalse(explorer.installed(self.ROOT))
         self.assertFalse(explorer.uninstall(self.ROOT))
+
+    def test_organize_on_folders_and_backgrounds(self):
+        from desktidy import winapi
+        stale = f"{self.ROOT}\\Directory\\shell\\DeskTidy\\shell\\3versions"     # the layout of an older version
+        winapi.reg_write(stale, {"MUIVerb": "Old versions here..."})
+        explorer.install(self.ROOT)
+        self.assertIsNone(winapi.reg_read(stale, "MUIVerb"))                      # reinstalling leaves nothing old
+        self.assertIn('organize "%1" --pause',
+                      winapi.reg_read(f"{self.ROOT}\\Directory\\shell\\DeskTidy\\shell\\3organize\\command"))
+        for target in ("Directory\\Background", "DesktopBackground"):
+            self.assertIn('organize "%V" --pause',
+                          winapi.reg_read(f"{self.ROOT}\\{target}\\shell\\DeskTidy\\shell\\1organize\\command"))
+        explorer.uninstall(self.ROOT)
+        for target in explorer.MENU_TARGETS:
+            self.assertIsNone(winapi.reg_read(f"{self.ROOT}\\{target}\\shell\\DeskTidy", "MUIVerb"), target)
 
 
 class TestLinks(IsolatedTest):
@@ -213,6 +228,10 @@ class TestLinuxMenus(IsolatedTest):
         dolphin = files[os.path.join(self.tmp, "kio", "servicemenus", "desktidy.desktop")]
         self.assertIn("X-KDE-Submenu=DeskTidy", dolphin)
         self.assertIn("pin-toggle %f", dolphin)
+        organize = files[os.path.join(self.tmp, "nautilus", "scripts", "DeskTidy", "Organize this folder")]
+        self.assertIn("terminal organize", organize)
+        nemo = files[os.path.join(self.tmp, "nemo", "actions", "desktidy-organize.nemo_action")]
+        self.assertIn("Extensions=dir;", nemo)
 
 
 class TestEditor(IsolatedTest):
@@ -269,6 +288,60 @@ class TestEditor(IsolatedTest):
         self.assertEqual(config.tidy_limit(saved), 25)
         self.assertIsNone(config.daily_limit(saved))
         self.assertTrue(os.path.exists(config.path("rules") + ".bak"))
+
+    def test_organize_and_history_from_the_browser(self):
+        from desktidy import ai, organize
+        self.config(watched_folders=[{"path": "{DESKTOP}", "include_folders": False}],
+                    ai={"mode": "limited", "provider": "groq"})                     # the Desktop is watched
+        desktop = self.folder("home", "Desktop")
+        for i in range(4):
+            self.write(f"thesis_chapter_{i}.txt", "Thesis chapter on renewable energy policy. " * 20,
+                       folder="home\\Desktop")
+        for i in range(8):
+            self.write(f"misc_{i}.txt", f"unrelated note number {i} " * 3, folder="home\\Desktop")
+        no_ai = [mock.patch.object(ai, "ready", return_value=None),                  # never the real service
+                 mock.patch.object(ai, "complete", side_effect=AssertionError("no AI in tests"))]
+        for p in no_ai:
+            p.start()
+            self.addCleanup(p.stop)
+        status, body = self.call("/api/organize")
+        self.assertEqual(status, 200)
+        state = json.loads(body)
+        self.assertFalse(state["ai"]["ready"])
+        self.assertIn(desktop, [s["path"] for s in state["spots"]])
+        self.assertNotIn("key", json.dumps(state["ai"]).lower().replace("masked", ""))
+        status, body = self.call("/api/organize/plan", {"folder": desktop, "offline": True})
+        self.assertEqual(status, 200, body)
+        groups = json.loads(body)["plan"]["groups"]
+        n = next(i for i, g in enumerate(groups, 1) if "thesis" in g["title"].lower())
+        status, body = self.call("/api/organize/preview", {"numbers": [n]})
+        self.assertEqual(status, 200, body)
+        self.assertEqual(json.loads(body)["moves"], 4)
+        self.assertEqual(sum(1 for x in os.listdir(desktop) if x.startswith("thesis")), 4)  # a preview moves nothing
+        status, body = self.call("/api/organize/apply", {"numbers": [n]})
+        self.assertEqual((status, json.loads(body)["moved"]), (200, 4))
+        self.assertEqual(sum(1 for x in os.listdir(desktop) if x.startswith("thesis")), 0)
+        moves = json.loads(self.call("/api/history")[1])["moves"]
+        self.assertTrue(all(m["undoable"] for m in moves))
+        status, body = self.call("/api/undo", {"id": moves[0]["id"]})
+        self.assertEqual(status, 200, body)
+        self.assertTrue(os.path.exists(json.loads(body)["restored"]))
+        status, body = self.call("/api/organize/undo", {})                          # the rest comes back too
+        self.assertEqual(status, 200, body)
+        self.assertEqual(len(json.loads(body)["skipped"]), 1)                       # the one already back
+        self.assertEqual(sum(1 for x in os.listdir(desktop) if x.startswith("thesis")), 4)
+        self.assertEqual(organize.load()["groups"][n - 1].get("applied"), None)
+
+    def test_organize_and_history_refuse(self):
+        self.assertEqual(self.call("/api/history", token=False)[0], 403)
+        self.assertEqual(self.call("/api/organize/apply", {"numbers": [1]}, token=False)[0], 403)
+        self.assertEqual(self.call("/api/undo", {"id": "../../x"})[0], 422)
+        self.assertEqual(self.call("/api/undo", {"id": "0123abcd"})[0], 404)
+        self.assertEqual(self.call("/api/organize/plan", {"folder": "C:\\does\\not\\exist"})[0], 422)
+        self.assertEqual(self.call("/api/organize/plan", {"folder": str(config.data_dir())})[0], 422)
+        self.assertEqual(self.call("/api/organize/preview", {"numbers": [1]})[0], 422)   # no plan
+        self.assertEqual(self.call("/api/organize/undo", {})[0], 409)
+        self.assertEqual(self.call("/api/mkdir", ["a", "list"])[0], 400)              # not an object: no crash
 
     def test_validate(self):
         errors, warnings = editor.validate({"rules": [{"name": "X", "destination": "{NOPE}\\x"}], "watched_folders": [],

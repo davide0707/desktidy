@@ -12,10 +12,12 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import secrets
 import threading
 import time
 import webbrowser
+from datetime import date
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import APP_NAME, __version__, config, folders, providers
@@ -58,10 +60,11 @@ def validate(data) -> tuple[list[str], list[str]]:
         if unknown:
             warnings.append(f"{label}: unknown kinds {', '.join(sorted(unknown))}")
         dest = cfg.expand(r["destination"])
-        if "{" in dest:
+        if "{" in config.dated(dest, date.today()):  # {YEAR} and {MONTH} are filled in from each file's date
             errors.append(f"{label}: unknown variable in {r['destination']}")
-        elif not os.path.isdir(dest):
-            warnings.append(f"{label}: {config.short(dest)} does not exist yet (it is created at the first move)")
+        elif not os.path.isdir(config.undated(dest)):
+            warnings.append(f"{label}: {config.short(config.undated(dest))} does not exist yet (it is created at the "
+                            "first move)")
     for w in data["watched_folders"]:
         if not isinstance(w, dict) or not w.get("path"):
             errors.append("a watched folder has no path")
@@ -81,6 +84,98 @@ def validate(data) -> tuple[list[str], list[str]]:
     if data.get("rename", {}).get("mode", "smart") not in config.RENAME_MODES:
         errors.append("unknown rename mode")
     return errors, warnings
+
+
+# ---------------------------------------------------------------- the Organize and History tabs
+def organize_state() -> dict:
+    """The crowded folders, the saved plan and what the AI would see (never the key: only whether it is ready)."""
+    from . import ai, organize, redact
+    cfg = config.load_config()
+    p = providers.current(cfg)
+    mode = config.ai_mode(cfg)
+    spots = [{"path": s.path, "name": os.path.basename(s.path.rstrip(os.sep)) or s.path, "files": s.files,
+              "folders": s.folders} for s in organize.crowded(cfg)]
+    return {"spots": spots, "plan": organize.load(),
+            "ai": {"ready": bool(ai.ready(cfg, lambda m: None, files=False)), "service": p.name, "local": p.local,
+                   "mode": mode, "private_sent": mode == config.EVERYTHING, "masked": redact.wanted(cfg)}}
+
+
+def organize_plan(body: dict) -> tuple[int, dict]:
+    from . import ai, organize
+    cfg = config.load_config()
+    folder = os.path.abspath(os.path.expanduser(str(body.get("folder", ""))))
+    if not os.path.isdir(folder) or config.inside(folder, str(config.data_dir())):
+        return 422, {"error": f"{folder} is not a folder that can be organised"}
+    key = None if body.get("offline") else ai.ready(cfg, lambda m: None, files=False)
+    result = organize.plan_folder(folder, cfg, key, lambda m: None)
+    data = organize.save([result], cfg, offline=key is None)
+    return 200, {"plan": data, "failed": result["failed"]}
+
+
+def _numbers(body: dict) -> list[int]:
+    raw = body.get("numbers")
+    return [n for n in raw if isinstance(n, int) and not isinstance(n, bool)][:500] if isinstance(raw, list) else []
+
+
+def organize_preview(body: dict) -> tuple[int, dict]:
+    from . import ops, organize
+    groups = organize.load().get("groups", [])
+    chosen = [groups[n - 1] for n in _numbers(body) if 1 <= n <= len(groups) and not groups[n - 1].get("applied")]
+    if not chosen:
+        return 422, {"error": "choose at least one group not applied yet"}
+    plan, notes = organize.steps(chosen, config.load_config(), bool(body.get("pin")))
+    return 200, {"title": plan.title, "steps": [ops.describe(s) for s in plan.steps][:300], "notes": notes,
+                 "problems": plan.problems, "moves": sum(1 for s in plan.steps if s["op"] == "move")}
+
+
+def organize_apply(body: dict) -> tuple[int, dict]:
+    from . import organize
+    try:
+        entry = organize.apply(_numbers(body), config.load_config(), bool(body.get("pin")))
+    except Exception as ex:  # nothing was changed: ops.apply rolls back
+        return 422, {"error": f"Stopped and rolled back: {ex}"}
+    return 200, {"title": entry["title"], "moved": sum(1 for s in entry["steps"] if s["op"] == "move")}
+
+
+def organize_undo() -> tuple[int, dict]:
+    from . import ops, organize
+    latest = next((e for e in reversed(ops.journal()) if not e.get("undone")), None)
+    entry = organize.undo(config.load_config())
+    if not entry:
+        return 409, {"error": f"The latest folder change is not an organize: {latest['title']}" if latest
+                     else "Nothing to undo"}
+    return 200, {"title": entry["title"], "skipped": entry.get("skipped", []),
+                 "back": sum(1 for s in entry["steps"] if s["op"] == "move" and s.get("restored"))}
+
+
+def history(limit: int = 60) -> dict:
+    """The latest moves, newest first, with whether each can still be undone."""
+    from .cli import UNDOABLE
+    from .ops import current_path
+    from .service import move_id, read_moves
+    rows = []
+    for m in read_moves()[-limit:][::-1]:
+        where = current_path(m["destination"])
+        rows.append({"id": move_id(m), "time": m["time"], "action": m["action"],
+                     "name": os.path.basename(m["source"]), "from": os.path.dirname(m["source"]),
+                     "to": where, "reason": m["reason"],
+                     "undoable": m["action"] in UNDOABLE and os.path.exists(where)})
+    return {"moves": rows}
+
+
+def undo(body: dict) -> tuple[int, dict]:
+    from .cli import UNDOABLE, undo_move
+    from .service import move_id, read_moves
+    wanted = str(body.get("id", ""))
+    if not re.fullmatch(r"[0-9a-f]{8}", wanted):
+        return 422, {"error": "invalid id"}
+    m = next((m for m in reversed(read_moves()) if move_id(m) == wanted and m["action"] in UNDOABLE), None)
+    if not m:
+        return 404, {"error": "no such move"}
+    try:
+        return 200, {"restored": undo_move(m)}
+    except OSError as ex:
+        return 409, {"error": str(ex)}
 
 
 def state() -> dict:
@@ -141,10 +236,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(403, b"Open the editor with: desktidy editor", "text/plain")
             html = PAGE.read_text(encoding="utf-8").replace("__TOKEN__", self.server.token)
             return self._send(200, html.encode("utf-8"), "text/html")
-        if self.path == "/api/state":
+        reads = {"/api/state": state, "/api/organize": organize_state, "/api/history": history}
+        if self.path in reads:
             if not self._authorised():
                 return self._send(403, {"error": "forbidden"})
-            return self._send(200, state())
+            return self._send(200, reads[self.path]())
         self._send(404, {"error": "not found"})
 
     def do_POST(self):
@@ -174,6 +270,8 @@ class Handler(BaseHTTPRequestHandler):
                 data.update(body)
             config.update_config(replace)
             return self._send(200, {"saved": True, "warnings": warnings, "file": config.path("rules")})
+        if not isinstance(body, dict):  # the other calls take an object (a list here would fail on body.get)
+            return self._send(400, {"error": "a JSON object is expected"})
         if self.path == "/api/mkdir":
             cfg = config.Config(body.get("rules") or config.load_config())
             made = []
@@ -186,6 +284,11 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/api/unpin":
             ok = folders.unpin(str(body.get("path", "")))
             return self._send(200, {"unpinned": ok})
+        actions = {"/api/organize/plan": organize_plan, "/api/organize/preview": organize_preview,
+                   "/api/organize/apply": organize_apply, "/api/organize/undo": lambda b: organize_undo(),
+                   "/api/undo": undo}
+        if self.path in actions:
+            return self._send(*actions[self.path](body))
         if self.path == "/api/close":
             self.server.closing = True
             self._send(200, {"bye": True})

@@ -108,6 +108,17 @@ class TestAIModes(unittest.TestCase):
         an = ct.Analysis("C:\\x\\a.txt", False)
         self.assertFalse(classifier.wants_ai(self.decision("none", private=True), an, {"ai": {"mode": "ai-only"}}))
 
+    def test_always_ai_reads_private_documents_but_never_photos(self):
+        cfg = {"ai": {"mode": "all", "provider": "groq"}}
+        doc = ct.Analysis("C:\\x\\scan0001.pdf", False)
+        for strength in ("none", "weak", "strong"):
+            self.assertTrue(classifier.wants_ai(self.decision(strength, private=True), doc, cfg), strength)
+        photo = ct.Analysis("C:\\x\\IMG_0001.jpg", False)
+        photo.tags.add("photo")
+        self.assertFalse(classifier.wants_ai(self.decision("strong", private=True), photo, cfg))
+        self.assertFalse(classifier.wants_ai(self.decision("none"), ct.Analysis("C:\\x\\setup.exe", False), cfg))
+        self.assertFalse(classifier.wants_ai(self.decision("none", private=True), doc, cfg, no_ai=True))
+
     def test_unknown_mode_means_off(self):
         self.assertEqual(config.ai_mode({"ai": {"mode": "boh"}}), "off")
 

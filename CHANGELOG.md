@@ -3,6 +3,35 @@
 All notable changes to DeskTidy are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/)
 and the project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **`desktidy organize`**: the crowded folders among yours (Desktop, Downloads, Documents, the to-sort pile, the
+  pinned folders), and for any of them a plan from the AI that groups the loose items into folders: new ones, or
+  folders you already have. `organize apply <n | all>` after a preview, `organize undo` puts everything back.
+  Private files, photos and screenshots are never sent; what the rules place with certainty is placed offline.
+
+- **Rules only or always AI: you choose.** The setup asks how DeskTidy should understand your files: with its rules
+  alone (`desktidy ai rules`, nothing leaves your computer) or always with the AI (`desktidy ai all`). The new `all`
+  mode sends every file to the AI, bills, payslips and IDs included, and the AI names the files the rules would
+  rename (`scan0001.pdf` becomes `Fattura_2231_Acme_Srl_2026-10-12.pdf`); photos, screenshots and programs stay
+  offline. Before private documents go to a service on the internet DeskTidy names it and asks; with Ollama they
+  never leave the computer. The existing modes are unchanged: `ai-only` still keeps private files offline.
+
+### Changed
+- AI names for invoices, bills, receipts and other dated documents: the kind, the number, who issued it and the
+  document date (`Fattura_2231_Acme_Srl_2026-10-12`).
+- House rule 5 is now "Private stays private, unless you choose otherwise".
+- `desktidy ai always` and `ai all` now choose the new `all` mode (they meant `ai-only` before); `ai rules` = `off`.
+- `advice undo` (and `organize undo`) goes on when an item can't be put back because it was moved or deleted in the
+  meantime, and lists it; an item whose old name was taken comes back as `name_v2`.
+
+### Fixed
+- Deadline reminders say "in N days" from the day they are computed for, not always from today.
+- A watched folder with `wait_seconds: 0` no longer skips a file whose time is a few microseconds in the future
+  (Windows).
+- The AI batch tests are skipped, not failed, when the optional `anthropic` package is not installed.
+
 ## [1.3.0] - 2026-10-09
 
 ### Added

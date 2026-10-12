@@ -172,6 +172,14 @@ def record(action: str, src: str, dst: str, reason: str) -> str:
     return move_id(row)
 
 
+def keep(path: str) -> None:
+    """Leave a restored item where it is until the user changes it (kept.json)."""
+    st = os.stat(path)
+    kept = config.read_json(config.path("kept"), []) or []
+    kept.append({"path": path, "size": st.st_size, "mtime": st.st_mtime})
+    config.write_json(config.path("kept"), kept[-500:])
+
+
 def read_moves() -> list[dict]:
     try:
         with open(config.path("moves"), encoding="utf-8-sig", newline="") as f:
@@ -253,7 +261,8 @@ class Service:
         return t
 
     def ready(self, path: str, is_dir: bool, wait: int) -> bool:
-        if not self.opts.now and time.time() - self.last_change(path, is_dir, time.time() - wait) < wait:
+        # wait > 0: a file just written can carry a time a few microseconds ahead of time.time() (Windows)
+        if not self.opts.now and wait > 0 and time.time() - self.last_change(path, is_dir, time.time() - wait) < wait:
             return False
         if not is_dir:
             if any(os.path.exists(path + e) for e in (".part", ".crdownload", ".download")):
@@ -373,13 +382,21 @@ class Service:
 
     def finish(self, cfg: config.Config, path: str, is_dir: bool, base: str, dest: str | None, reason: str,
                new_stem: str | None, rename_reason: str, an: ct.Analysis | None = None, summary: str = "",
-               due: str = "") -> list[str]:
+               due: str = "", when: str = "") -> list[str]:
         """Move (and maybe rename) one item; returns the line for the notification. Then the file is added to the
-        search index, its deadlines are noted and older versions next to it are pointed out."""
+        search index, its deadlines are noted and older versions next to it are pointed out. A dated destination
+        ({YEAR}, {MONTH}) takes the date of the document: `when` (read by the AI), else the one in its text."""
         if not dest:
             dest = cfg.default_destination
             if reason in ("", "no rule matched"):
                 reason = "no rule matched: left to sort by hand"
+        if config.is_dated(dest):
+            from .deadlines import file_date
+            dest = config.dated(dest, file_date(path, an, when))
+        if "{" in dest or not os.path.isabs(dest):  # a typo in rules.json ({STUDI}): never a folder called "{STUDI}"
+            self.error(path, OSError(f"the destination {dest} has an unknown variable or is not a full path "
+                                     "(desktidy rules check)"))
+            return []
         original = os.path.basename(path)
         name = naming.final_name(original, new_stem, is_dir)
         renamed = new_stem is not None and os.path.splitext(name)[0] != os.path.splitext(config.clean_name(original))[0]
@@ -472,7 +489,8 @@ class Service:
         else:
             rename_reason = item.rename_reason + ("; name suggested by AI" if ai_name else "")
         return self.finish(cfg, item.path, item.is_dir, item.base, dest, reason, new_stem, rename_reason,
-                           an=item.analysis, summary=answer.summary if answer else "", due=answer.due if answer else "")
+                           an=item.analysis, summary=answer.summary if answer else "", due=answer.due if answer else "",
+                           when=answer.date if answer else "")
 
     @staticmethod
     def pending_paths() -> set[str]:
@@ -592,9 +610,9 @@ class Service:
         threading.Thread(target=wrapper, name=name, daemon=True).start()
 
     def housekeeping(self, cfg: config.Config) -> None:
-        """The periodic jobs: deadline reminders, new memory cards, learning from corrections, the search index,
-        the archive and the update check. Each at its own pace; the slow ones in the background."""
-        from . import archive, deadlines, importer, index, learn, updates
+        """The periodic jobs: deadline reminders, new memory cards, learning from corrections, the weekly summary,
+        the search index, the archive and the update check. Each at its own pace; the slow ones in the background."""
+        from . import archive, deadlines, importer, index, learn, summary, updates
         if self.opts.dry_run or self.opts.once:
             return
         if self.due("deadlines", 600):
@@ -606,11 +624,22 @@ class Service:
             def learn_work():
                 for p in learn.scan(cfg):
                     rule = p["rule"]
-                    log.info(f"LEARNED: a rule for {rule['destination']} from {len(p['examples'])} corrections")
-                    system.notify(f"{APP_NAME} learned from your corrections",
-                                  f"Files like {', '.join(p['examples'][:2])} go to {os.path.basename(rule['destination'])}."
-                                  " Add the rule?", [("Review", "desktidy:learn")])
+                    source = "AI decisions" if p.get("source") == "ai" else "corrections"
+                    log.info(f"LEARNED: a rule for {rule['destination']} from {p.get('count', len(p['examples']))} "
+                             f"{source}")
+                    system.notify(f"{APP_NAME} learned from " + ("the AI" if p.get("source") == "ai" else
+                                                                 "your corrections"),
+                                  f"Files like {', '.join(p['examples'][:2])} go to "
+                                  f"{os.path.basename(config.undated(cfg.expand(rule['destination'])))}. Add the rule?",
+                                  [("Review", "desktidy:learn")])
             self.background("learn", learn_work)
+        if self.due("summary", 3600) and summary.due(cfg):
+            s = summary.week(cfg)
+            if not summary.quiet(s):
+                title, body = summary.message(s)
+                log.info(f"WEEK: {body}")
+                system.notify(title, body, [("Show", "desktidy:week")])
+            summary.sent()
         if self.due("index", 86400) and cfg.get("search", {}).get("enabled", True):
             self.background("index", lambda: log.info(f"search index: {index.refresh(cfg)}"))
         if self.due("archive", 86400) and archive.settings(cfg)["enabled"]:

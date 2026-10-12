@@ -8,6 +8,7 @@ Flash models), Mistral (free "Experiment" plan), OpenRouter (":free" models) and
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
+from urllib.parse import urlsplit
 
 from . import config
 
@@ -68,13 +69,22 @@ def provider_id(cfg: dict) -> str:
     return pid if pid in PROVIDERS else "claude"
 
 
+def on_this_pc(url: str) -> bool:
+    """A server address on this computer (localhost, 127.x, ::1): what is sent there never leaves the PC."""
+    host = (urlsplit(url).hostname or "").lower()
+    return host in ("localhost", "::1") or host.startswith("127.") or host.endswith(".localhost")
+
+
 def current(cfg: dict) -> Provider:
-    """The chosen provider, with the overrides from rules.json (ai.base_url, ai.vision)."""
+    """The chosen provider, with the overrides from rules.json (ai.base_url, ai.vision). A local service moved to
+    another machine with ai.base_url is not local any more (privacy notices and masking depend on it)."""
     p = PROVIDERS[provider_id(cfg)]
     ai = cfg.get("ai", {})
     changes = {}
     if ai.get("base_url"):
         changes["base_url"] = ai["base_url"].rstrip("/")
+        if p.local and not on_this_pc(changes["base_url"]):
+            changes["local"] = False
     if isinstance(ai.get("vision"), bool):
         changes["vision"] = ai["vision"]
     return replace(p, **changes) if changes else p

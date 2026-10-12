@@ -193,7 +193,7 @@ class TestFakeServer(IsolatedTest):
         self.assertEqual(advice.load()["tips"], result["tips"])
         u = usage.read()
         self.assertEqual((u["total_files"], u["days"][max(u["days"])]["requests"]), (0, 1))  # no file counted
-        self.assertIn("organisation advice", said[0])
+        self.assertIn("folder organisation", said[0])
         sent = FakeServer.requests[-1]["messages"][1]["content"][0]["text"]
         self.assertIn("Recipes", sent)
 

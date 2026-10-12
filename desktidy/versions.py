@@ -121,7 +121,7 @@ def find(cfg: config.Config, folder: str | None = None) -> list[Family]:
         return in_folder(folder)
     rule_dests = sorted({cfg.expand(r["destination"]) for r in cfg["rules"]})
     out = []
-    for f in folders.candidate_folders(cfg, rule_dests, cfg.default_destination):
+    for f in folders.real_folders(cfg, rule_dests, cfg.default_destination):
         if os.path.basename(f).lower() != FOLDER:
             out += in_folder(f)
     return out

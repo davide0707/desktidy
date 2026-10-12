@@ -23,6 +23,8 @@ STOP
 *.key
 advice.json
 folder_ops.json
+organize.json
+summary.json
 deadlines.json
 learned.json
 imports.json

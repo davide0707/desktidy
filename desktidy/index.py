@@ -209,7 +209,7 @@ def refresh(cfg: config.Config, limit: int = 2000, ocr: bool = False, progress=N
     if not cfg.get("search", {}).get("enabled", True):
         return {"added": 0, "removed": 0}
     rule_dests = sorted({cfg.expand(r["destination"]) for r in cfg["rules"]})
-    private = [cfg.expand(r["destination"]) for r in cfg["rules"] if r.get("private")]
+    private = [config.undated(cfg.expand(r["destination"])) for r in cfg["rules"] if r.get("private")]
     skip_private = not cfg.get("search", {}).get("index_private", True)
     with _db() as con:
         known = {os.path.normcase(p): (s, m) for p, s, m in con.execute("SELECT path, size, mtime FROM files")}
@@ -219,7 +219,7 @@ def refresh(cfg: config.Config, limit: int = 2000, ocr: bool = False, progress=N
             remove(key)
             removed += 1
     added = 0
-    for folder in folders.candidate_folders(cfg, rule_dests, cfg.default_destination):
+    for folder in folders.real_folders(cfg, rule_dests, cfg.default_destination):
         if skip_private and any(config.inside(folder, p) for p in private):
             continue
         try:

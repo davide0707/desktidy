@@ -164,10 +164,15 @@ def decide(path: str, is_dir: bool, cfg: config.Config, an: ct.Analysis | None =
 
 
 def wants_ai(d: Decision, an: ct.Analysis, cfg: config.Config, no_ai: bool = False) -> bool:
-    """Whether the chosen AI mode asks Claude about this file (private files and programs never)."""
+    """Whether the chosen AI mode asks the AI about this file. Programs, photos and screenshots never; private
+    documents only in the "all" mode, which the user chose for that."""
     mode = config.ai_mode(cfg)
     claude = cfg.get("ai", {}).get("provider", "claude") == "claude"
-    if (claude and not AI_AVAILABLE) or no_ai or mode == "off" or an.ext in PROGRAMS or d.private or an.is_private:
+    if (claude and not AI_AVAILABLE) or no_ai or mode == "off" or an.ext in PROGRAMS or an.is_private:
+        return False
+    if mode == config.EVERYTHING:
+        return True
+    if d.private:
         return False
     if mode == "ai-only":
         return True

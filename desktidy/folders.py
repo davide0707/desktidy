@@ -68,7 +68,92 @@ def candidate_folders(cfg: config.Config, rule_destinations: list[str], default:
     found |= set(rule_destinations)
     found |= {p.path for p in active_pinned()}
     found.discard(default)
+    templates = [config.dated_pattern(d) for d in rule_destinations if config.is_dated(d)]
+    if templates:  # Bills/{YEAR} is offered, not the Bills/2025, Bills/2026 it made: a new file goes by its own date
+        found = {p for p in found if config.is_dated(p) or not any(t.match(os.path.normpath(p)) for t in templates)}
     return [default] + sorted(found, key=str.lower)[: cfg.ai.get("max_candidate_folders", 400)]
+
+
+# ---------------------------------------------------------------- folders that belong to a program
+APP_NAMES = re.compile(
+    r"^(?:my games|saved games|.+ games|visual studio(?: code)? ?\d*|windowspowershell|powershell|outlook files|"
+    r"onenote notebooks|custom office templates|my web sites|iisexpress|sql server management studio.*|"
+    r"call of duty.*|battlefield.*|electronic arts|ea sports.*|ubisoft|paradox interactive|klei|bioware|"
+    r"rockstar games|cd projekt red|fifa ?\d*|euro truck simulator.*|american truck simulator|zoom|"
+    r"arduino|processing|fiddler2|wondershare.*|autodesk.*|ansys.*|matlab|labview data|national instruments)$",
+    re.I)
+PERSONAL_EXT = (ct.DOCUMENT_EXT | ct.OFFICE_EXT | ct.OLD_OFFICE_EXT | ct.IMAGE_EXT | ct.AUDIO_EXT | ct.VIDEO_EXT
+                | ct.PRINT_3D_EXT | ct.GERBER_EXT | {".csv", ".zip", ".rar", ".7z", ".tar", ".gz", ".mobi", ".azw3",
+                                                     ".psd", ".ai", ".svg", ".dwg", ".dxf", ".kicad_pcb", ".kicad_sch",
+                                                     ".blend", ".exe", ".msi", ".iso", ".apk", ".dmg", ".pkg", ".deb",
+                                                     ".rpm", ".ipynb", ".key", ".pages", ".numbers", ".vcf", ".ics"})
+NOT_COUNTED = {".lnk", ".url", ".desktop", ".webloc", ".inetloc"}
+APP_SAMPLE = 300               # files looked at to tell a program's folder from yours
+_apps: dict = {}
+
+
+def _by_name(path: str) -> bool:
+    """The folder, or one above it inside the home folder, is named like a program's (My Games, Visual Studio 2022)."""
+    home = os.path.normcase(os.path.expanduser("~"))
+    p = os.path.normpath(path)
+    while p and os.path.normcase(p) != home and os.path.dirname(p) != p:
+        if APP_NAMES.match(os.path.basename(p)):
+            return True
+        p = os.path.dirname(p)
+    return False
+
+
+def _by_content(path: str) -> bool:
+    """Mostly files that are not documents, pictures, music or videos (.cfg, .dat, .sav, .json, no extension)."""
+    personal = total = 0
+    stack = [(path, 0)]
+    while stack and total < APP_SAMPLE:
+        folder, depth = stack.pop()
+        try:
+            with os.scandir(folder) as found:
+                entries = list(found)
+        except OSError:
+            continue
+        for e in entries:
+            name = e.name.lower()
+            if name.startswith((".", "~$", "$")) or name in ("desktop.ini", "thumbs.db"):
+                continue
+            try:
+                if e.is_dir(follow_symlinks=False):
+                    if depth < 3:
+                        stack.append((e.path, depth + 1))
+                elif e.is_file(follow_symlinks=False):
+                    ext = os.path.splitext(name)[1]
+                    if ext in NOT_COUNTED:
+                        continue
+                    total += 1
+                    personal += ext in PERSONAL_EXT
+            except OSError:
+                continue
+    return total >= 3 and personal < 0.3 * total
+
+
+def app_owned(path: str) -> bool:
+    """A folder that belongs to a program (game saves, settings, code snippets, a launcher's data): DeskTidy never
+    organises, moves or deduplicates it. By name, or by content. Remembered for 10 minutes."""
+    key = os.path.normcase(os.path.normpath(path))
+    hit = _apps.get(key)
+    if hit and time.time() - hit[0] < 600:
+        return hit[1]
+    result = _by_name(path) or _by_content(path)
+    if len(_apps) > 5000:
+        _apps.clear()
+    _apps[key] = (time.time(), result)
+    return result
+
+
+def real_folders(cfg: config.Config, rule_destinations: list[str], default: str) -> list[str]:
+    """candidate_folders() with every dated destination replaced by the folders it has produced (Bills/2025,
+    Bills/2026...): what exists on disk, for the search index, versions, learning and the overview."""
+    out: list[str] = []
+    for p in candidate_folders(cfg, rule_destinations, default):
+        out += config.dated_folders(p) if config.is_dated(p) else [p]
+    return list(dict.fromkeys(out))
 
 
 def aliases(cfg: config.Config) -> list[tuple[str, str]]:
@@ -93,16 +178,23 @@ def label(p: str, alias_list=()) -> str:
 
 # ---------------------------------------------------------------- similarity with existing folders
 def _name_profile(p: str) -> Counter:
-    """What a folder is about according to names: its own name, its parent's and what it contains (200 entries)."""
+    """What a folder is about according to names: its own name, its parent's and what it contains (200 entries).
+    A dated destination (Bills/{YEAR}) is about its fixed part and the files of its latest dated folders."""
     c: Counter = Counter()
-    for s in ct.informative(ct.split_camel(os.path.basename(p))):
+    named = config.undated(p)
+    for s in ct.informative(ct.split_camel(os.path.basename(named))):
         c[s] += 3
-    for s in ct.informative(ct.split_camel(os.path.basename(os.path.dirname(p)))):
+    for s in ct.informative(ct.split_camel(os.path.basename(os.path.dirname(named)))):
         c[s] += 1
-    try:
-        entries = [e for e in os.scandir(p) if not e.name.startswith((".", "~$", "$"))][:200]
-    except OSError:
-        entries = []
+    entries = []
+    for folder in reversed(config.dated_folders(p)) if config.is_dated(p) else [p]:
+        try:
+            with os.scandir(folder) as found:
+                entries += [e for e in found if not e.name.startswith((".", "~$", "$"))][:200 - len(entries)]
+        except OSError:
+            continue
+        if len(entries) >= 200:
+            break
     for e in entries:
         for s in set(ct.informative(ct.split_camel(os.path.splitext(e.name)[0]))):
             c[s] += 1

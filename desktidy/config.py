@@ -27,7 +27,9 @@ _FILES = {
     "kept": "kept.json",            # files restored by undo: left alone until they change
     "setup": "setup.json",          # when the house rules were accepted
     "advice": "advice.json",        # the latest organisation tips (desktidy advice)
-    "ops": "folder_ops.json",       # folder changes applied from the advice, to undo them
+    "ops": "folder_ops.json",       # folder changes applied from the advice and organize, to undo them
+    "organize": "organize.json",    # the latest plan of desktidy organize
+    "summary": "summary.json",      # when the weekly summary was last shown
     "deadlines": "deadlines.json",  # payment and submission deadlines found in documents
     "learned": "learned.json",      # your corrections and the rules learned from them
     "imports": "imports.json",      # photos already imported from memory cards
@@ -44,7 +46,10 @@ AI_MODES = {  # mode: (what it does, files per day)
     "moderate": ("also for files placed with low confidence", 30),
     "ai-only": ("every file except private ones, fixes names that don't match the content, "
                 "and suggests a better organisation over time", 100),
+    "all": ("always AI: every file, private documents too (bills, payslips, IDs), named by the AI; "
+            "photos, screenshots and programs stay offline", 100),
 }
+EVERYTHING = "all"  # the mode in which private documents are sent to the AI too (the user chose it)
 MODELS = {"haiku": "claude-haiku-4-5", "sonnet": "claude-sonnet-5-5", "opus": "claude-opus-5-5"}
 PRICES = {  # USD per million tokens (input, output) of the paid models; free plans cost nothing
     "claude-haiku-4-5": (1.0, 5.0),
@@ -132,6 +137,63 @@ def expandvars(s: str) -> str:
         return m.group(0) if value is None else value
     s = re.sub(r"%([A-Za-z_][A-Za-z0-9_]*)%", windows_var, s)
     return os.path.expanduser(os.path.expandvars(s))
+
+
+# ---------------------------------------------------------------- dated destinations
+DATE_VARIABLES = {"YEAR": "%Y", "MONTH": "%m"}  # filled in from each file's date when it is moved
+
+
+def is_dated(p: str) -> bool:
+    """A destination like {DOCS}/Bills/{YEAR}: the folder depends on the date of each file. A {YEAR} variable
+    defined in rules.json is expanded before, like any other variable, so it is never taken for a date."""
+    return any("{" + v + "}" in p for v in DATE_VARIABLES)
+
+
+def dated(p: str, when) -> str:
+    """{DOCS}/Bills/{YEAR}/{MONTH} for 12 Oct 2026 -> {DOCS}/Bills/2026/10."""
+    for v, fmt in DATE_VARIABLES.items():
+        p = p.replace("{" + v + "}", when.strftime(fmt))
+    return p
+
+
+def undated(p: str) -> str:
+    """The part of a dated destination that exists before its first file: Bills/{YEAR}/{MONTH} -> Bills."""
+    if not is_dated(p):
+        return p
+    parts = p.split(os.sep)
+    first = next(i for i, part in enumerate(parts) if is_dated(part))
+    return os.sep.join(parts[:first]) or os.sep
+
+
+def _date_regex(text: str) -> str:
+    return "".join(r"\d{4}" if x == "{YEAR}" else r"\d{2}" if x == "{MONTH}" else re.escape(x)
+                   for x in re.split(r"(\{YEAR\}|\{MONTH\})", text))
+
+
+def dated_pattern(p: str, exact: bool = False) -> re.Pattern:
+    """Matches the real folders a dated destination produces, and what is inside them: Bills/{YEAR} -> Bills/2025,
+    Bills/2026/Scans (exact: only the folders themselves)."""
+    flags = re.I if os.path.normcase("A") == "a" else 0  # Windows: case does not matter
+    return re.compile("^" + _date_regex(os.path.normpath(p)) + ("" if exact else r"(?:[\\/].*)?") + "$", flags)
+
+
+def dated_folders(p: str) -> list[str]:
+    """The folders a dated destination has produced so far, oldest first."""
+    if not is_dated(p):
+        return [p] if os.path.isdir(p) else []
+    base = undated(p)
+    found = [base]
+    for part in os.path.relpath(p, base).split(os.sep):
+        rx = re.compile("^" + _date_regex(part) + "$", re.I)
+        nxt = []
+        for f in found:
+            try:
+                with os.scandir(f) as entries:
+                    nxt += [e.path for e in entries if e.is_dir(follow_symlinks=False) and rx.match(e.name)]
+            except OSError:
+                continue
+        found = nxt
+    return sorted(found)
 
 
 def native(p: str) -> str:

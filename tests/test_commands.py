@@ -140,3 +140,34 @@ class TestEntryPoints(CommandTest):
         self.assertIs(cli.find_command("find"), cli.cmd_find)
         self.assertIs(cli.find_command("scadenze"), cli.cmd_deadlines)
         self.assertIs(cli.find_command("url"), cli.cmd_url)
+
+
+class TestExplainPrivacy(CommandTest):
+    """explain --ai follows house rule 5 like the service: a private file goes to the AI only in the "all" mode."""
+
+    PAYSLIP = "Payslip for March: gross pay 2400, net pay 1800, tax, deductions, national insurance. " * 5
+
+    def explain(self, mode):
+        config.update_config(lambda d: d["ai"].update(mode=mode, provider="ollama"))
+        p = self.write("payslip_march.txt", self.PAYSLIP)
+        with mock.patch("desktidy.ai.ask", return_value={}) as ask, mock.patch.object(cli.files, "confirm", return_value=True):
+            out = self.run_cli("explain", p, "--ai")
+        return out, ask
+
+    def test_not_sent_in_ai_only(self):
+        out, ask = self.explain("ai-only")
+        ask.assert_not_called()
+        self.assertIn("Not sent to the AI", out)
+
+    def test_sent_when_the_user_chose_always_ai(self):
+        out, ask = self.explain("all")
+        ask.assert_called_once()
+        self.assertIn("you chose Always AI", out)
+
+    def test_a_dated_destination_shows_this_files_folder(self):
+        config.update_config(lambda d: d["rules"].insert(0, {"name": "Bills", "name_words": ["invoice"],
+                                                             "destination": "{D}\\Bills\\{YEAR}"}))
+        p = self.write("invoice_northwind.txt", "Invoice date: 03/11/2025\nAmount due 84.20 " * 3)
+        out = self.run_cli("explain", p)
+        self.assertIn(os.path.join("Bills", "2025"), out)
+        self.assertNotIn("{YEAR}", out)

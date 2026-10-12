@@ -54,10 +54,10 @@ SCHEMA = {
 
 # ---------------------------------------------------------------- when
 def enabled(cfg: dict) -> bool:
-    """ai.advice: "auto" (default: only in ai-only mode), "on" (any AI mode) or "off"."""
+    """ai.advice: "auto" (default: only in the ai-only and all modes), "on" (any AI mode) or "off"."""
     choice = cfg.get("ai", {}).get("advice", "auto")
     mode = config.ai_mode(cfg)
-    return mode != "off" and (choice == "on" or (choice == "auto" and mode == "ai-only"))
+    return mode != "off" and (choice == "on" or (choice == "auto" and mode in ("ai-only", config.EVERYTHING)))
 
 
 _moves_count: dict = {"stamp": None, "value": 0}
@@ -176,8 +176,8 @@ def overview(cfg: config.Config, max_folders: int | None = None) -> Overview:
     max_folders = max_folders or cfg.ai.get("advice_max_folders", 250)
     default = cfg.default_destination
     rule_dests = sorted({cfg.expand(r["destination"]) for r in cfg["rules"]})
-    private = [cfg.expand(r["destination"]) for r in cfg["rules"] if r.get("private")]
-    paths = [p for p in folders.candidate_folders(cfg, rule_dests, default) if os.path.isdir(p)]
+    private = [config.undated(cfg.expand(r["destination"])) for r in cfg["rules"] if r.get("private")]
+    paths = [p for p in folders.real_folders(cfg, rule_dests, default) if os.path.isdir(p)]
     paths = sorted(dict.fromkeys(paths), key=_sort_key)[:max_folders]
     surveyed = [_survey(p, any(config.inside(p, x) for x in private)) for p in paths]
     alias_list = folders.aliases(cfg)

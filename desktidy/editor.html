@@ -96,6 +96,8 @@ footer { position: fixed; bottom: 0; left: 0; right: 0; background: var(--panel)
   <button data-tab="rules">Rules</button>
   <button data-tab="folders">Folders</button>
   <button data-tab="extras">Deadlines, archive, import</button>
+  <button data-tab="organize">Organize</button>
+  <button data-tab="history">History</button>
   <button data-tab="json">Advanced (JSON)</button>
 </nav>
 <div id="msgs"></div>
@@ -105,6 +107,8 @@ footer { position: fixed; bottom: 0; left: 0; right: 0; background: var(--panel)
   <section id="rules"></section>
   <section id="folders"></section>
   <section id="extras"></section>
+  <section id="organize"><div class="empty">Loading...</div></section>
+  <section id="history"><div class="empty">Loading...</div></section>
   <section id="json">
     <div class="card">
       <h2>rules.json</h2>
@@ -218,6 +222,7 @@ function renderAI() {
     ${text("Model", "ai.model", "empty = the service's default", S.providers[get("ai.provider") || "groq"]?.model || "")}
     ${sel("Mode", "ai.mode", S.ai_modes, "", "off")}
     ${limit("Files the AI looks at", "ai.max_files_per_day", "per day", "The mode's default")}
+    <div>${check("Mask IBANs, card numbers, tax codes, e-mails and phones before sending (services on the internet; names and addresses are not masked)", "ai.redact", true)}</div>
   </div></div>
   <div class="card"><h2>Cost and quality</h2><div class="grid">
     ${num("Budget (USD, total)", "ai.budget_usd", "the AI stops when the spend reaches it")}
@@ -226,7 +231,7 @@ function renderAI() {
     ${num("Gather files for (seconds)", "ai.gather_seconds", "files arriving together share one request")}
   </div></div>
   <div class="card"><h2>Organisation advice</h2><div class="grid">
-    ${sel("Advice", "ai.advice", {auto: "Automatic in ai-only mode", on: "Automatic in every AI mode", off: "Only when I ask"}, "", "auto")}
+    ${sel("Advice", "ai.advice", {auto: "Automatic in the ai-only and all modes", on: "Automatic in every AI mode", off: "Only when I ask"}, "", "auto")}
     ${num("After how many tidied files", "ai.advice_after_files", "", 1)}
     ${num("At most every (days)", "ai.advice_every_days", "", 1)}
     ${text("Language", "ai.language", "empty = the language of your folder names")}
@@ -267,7 +272,7 @@ function renderRuleForm() {
   const listField = (label, key, hint) => `<label class="f">${esc(label)} <small>${esc(hint)}</small>
     <textarea data-list="${key}">${esc((r[key] || []).join(", "))}</textarea></label>`;
   box.innerHTML = `<h2>${esc(r.name || "Rule")}</h2><p class="hint">Words work in any language; plural, singular and one typo are tolerated.</p>
-   <div class="grid">${text("Name", p + ".name")}${text("Destination", p + ".destination", "variables: " + Object.keys(R.variables || {}).map(v => "{" + v + "}").join(" "))}</div>
+   <div class="grid">${text("Name", p + ".name")}${text("Destination", p + ".destination", "variables: " + Object.keys(R.variables || {}).map(v => "{" + v + "}").join(" ") + " · {YEAR} {MONTH}: the document's date")}</div>
    <div class="grid" style="margin-top:14px">
      ${listField("Words in the file name", "name_words", "comma separated")}
      ${listField("Strong words in the content", "content_words", "one is enough")}
@@ -277,7 +282,7 @@ function renderRuleForm() {
    <div class="grid" style="margin-top:14px">
      ${num("Min topics", p + ".min_topics", "empty = 2 or 3 by length", 1)}
      ${sel("Applies to", p + ".type", {file: "Files", folder: "Folders", both: "Files and folders"}, "", "file")}
-     <div>${check("Private: never sent to the AI", p + ".private")}${check("Generic: a confident content match wins over the name", p + ".generic")}</div>
+     <div>${check("Private: sent to the AI only in the all mode", p + ".private")}${check("Generic: a confident content match wins over the name", p + ".generic")}</div>
    </div>
    <label class="f" style="margin-top:14px">Recognised kinds <small>what DeskTidy understands by itself</small></label>
    <div class="chips">${S.kinds.map(k => `<label><input type="checkbox" data-kindchip="${k}" ${(r.recognize || []).includes(k) ? "checked" : ""}>${k}</label>`).join("")}</div>`;
@@ -346,11 +351,118 @@ function renderExtras() {
   </div></div>
   <div class="card"><h2>Learning and groups</h2><div class="grid">
     ${num("Corrections needed before proposing a rule", "learn.min_examples", "", 2)}
+    ${num("AI decisions needed before proposing a rule", "learn.min_ai_examples", "files the AI put in the same folder", 2)}
     ${num("Files needed to propose a group (to-sort pile)", "groups.min_files", "", 2)}
+  </div></div>
+  <div class="card"><h2>Weekly summary</h2><p class="hint">Files tidied, duplicates, deadlines and AI use of the week, in one notification.</p><div class="grid">
+    <div>${check("Show the weekly summary", "summary.weekly", true)}</div>
+    ${sel("Day", "summary.day", {monday: "Monday", tuesday: "Tuesday", wednesday: "Wednesday", thursday: "Thursday", friday: "Friday", saturday: "Saturday", sunday: "Sunday"}, "", "monday")}
+  </div></div>
+  <div class="card"><h2>Duplicates</h2><p class="hint">desktidy duplicates: the same file in two of your folders; one stays, the others go to the Recycle Bin.</p><div class="grid">
+    ${num("Smallest file compared (KB)", "duplicates.min_size_kb", "smaller files are not worth it", 1)}
   </div></div>`;
   bind(el);
   $("#remind").addEventListener("input", e => { const v = e.target.value.split(",").map(x => parseInt(x)).filter(x => x >= 0); set("deadlines.remind_days", v.length ? v : undefined); });
 }
+/* ---------- Organize: crowded folders, the plan, preview, do it, undo ---------- */
+let O = null;
+const base = p => String(p).split(/[\\/]/).pop();
+async function loadOrganize() {
+  const {status, data} = await api("/api/organize");
+  if (status !== 200) { show("err", "This page has expired: run desktidy editor again."); return; }
+  O = data; renderOrganize();
+}
+async function planFolder(folder, offline) {
+  const el = $("#organize");
+  el.querySelectorAll("button").forEach(b => b.disabled = true);
+  show("warn", offline || !O.ai.ready ? "Grouping offline..." : `Asking ${O.ai.service}...`);
+  const {status, data} = await api("/api/organize/plan", {folder, offline});
+  if (status !== 200) { show("err", data.error || "No plan"); renderOrganize(); return; }
+  O.plan = data.plan;
+  show(data.failed ? "warn" : "ok", data.failed ? "No usable answer from the AI: see desktidy log errors." :
+       `Plan ready: ${data.plan.groups.length} group(s). Nothing has moved yet.`);
+  renderOrganize();
+}
+function renderOrganize() {
+  const el = $("#organize"), ai = O.ai, plan = O.plan || {}, groups = plan.groups || [];
+  const privacy = !ai.ready ? "No AI now: the offline engine groups by names and words in common; nothing leaves this PC."
+    : ai.private_sent ? `The AI (${ai.service}) reads the name, the kind and the first words of each item, private documents too (you chose Always AI)${ai.masked ? "; IBANs, tax codes and phone numbers are masked" : ""}.`
+    : `The AI (${ai.service}) reads the name, the kind and the first words of each item; private files, photos and screenshots are never sent.`;
+  el.innerHTML = `
+  <div class="card"><h2>Crowded folders</h2><p class="hint">${esc(privacy)}</p>
+    ${O.spots.length ? `<table><tr><th>Folder</th><th>Items</th><th></th></tr>${O.spots.map((s, i) => `<tr>
+      <td><b>${esc(s.name)}</b><br><span class="mono">${esc(s.path)}</span></td>
+      <td style="width:140px">${s.files} file(s)${s.folders ? `, ${s.folders} folder(s)` : ""}</td>
+      <td style="width:230px"><button class="b" data-plan="${i}" aria-label="Plan ${esc(s.name)}${ai.ready ? " with the AI" : ""}">${ai.ready ? "Plan with the AI" : "Plan"}</button>
+        ${ai.ready ? `<button class="b" data-offline="${i}" aria-label="Plan ${esc(s.name)} offline">Offline</button>` : ""}</td></tr>`).join("")}</table>`
+      : '<div class="empty">No crowded folders: all tidy.</div>'}
+    <div class="row" style="margin-top:10px"><input type="text" id="orgFolder" placeholder="Another folder (full path)" style="flex:1; width:auto">
+      <button class="b" id="orgAny">Plan</button></div>
+  </div>
+  <div class="card"><h2>The plan</h2>
+    <p class="hint">${plan.at ? esc(`From ${plan.service}${plan.model ? " · " + plan.model : ""}, ${plan.at.replace("T", " ")}. Nothing moves until you press "Do it"; "Undo" puts everything back.`) : "No plan yet: choose a folder above."}</p>
+    ${groups.length ? `<table><tr><th></th><th>Group</th><th>Goes to</th><th>Files</th></tr>${groups.map((g, i) => `<tr>
+      <td style="width:30px"><input type="checkbox" data-g="${i + 1}" aria-label="Include the group ${esc(g.title)}" ${g.applied ? "disabled" : "checked"}></td>
+      <td><b>${esc(g.title)}</b>${g.applied ? ' <span class="tag">done</span>' : ""}<br><small>${esc(g.why || "")}</small></td>
+      <td><span class="tag${g.new ? " priv" : ""}">${g.new ? "new" : "existing"}</span> <span class="mono">${esc(g.target)}</span></td>
+      <td class="mono">${g.files.length}: ${esc(g.files.slice(0, 3).map(base).join(", "))}${g.files.length > 3 ? ", ..." : ""}</td></tr>`).join("")}</table>
+      <div class="row" style="margin-top:10px"><label class="c"><input type="checkbox" id="orgPin"> Pin the new folders (the next files about them go there by themselves)</label></div>
+      <div class="row" style="margin-top:10px"><button class="b p" id="orgPreview">Preview</button><button class="b" id="orgUndo">Undo the latest organize</button></div>` : ""}
+    <div id="orgSteps"></div>
+  </div>`;
+  el.querySelectorAll("[data-plan]").forEach(b => b.onclick = () => planFolder(O.spots[Number(b.dataset.plan)].path, false));
+  el.querySelectorAll("[data-offline]").forEach(b => b.onclick = () => planFolder(O.spots[Number(b.dataset.offline)].path, true));
+  $("#orgAny").onclick = () => { const f = $("#orgFolder").value.trim(); if (f) planFolder(f, false); };
+  if (!groups.length) return;
+  const chosen = () => [...el.querySelectorAll("[data-g]:checked:not(:disabled)")].map(c => Number(c.dataset.g));
+  $("#orgPreview").onclick = async () => {
+    const numbers = chosen(), pin = $("#orgPin").checked;
+    const {status, data} = await api("/api/organize/preview", {numbers, pin});
+    const box = $("#orgSteps");
+    if (status !== 200) { box.innerHTML = `<div class="msg err">${esc(data.error)}</div>`; return; }
+    box.innerHTML = `<div class="msg ${data.problems.length ? "err" : "warn"}"><b>${esc(data.title)}: ${data.moves} move(s)</b>
+      <ul>${[...data.problems, ...data.notes, ...data.steps].map(s => `<li class="mono">${esc(s)}</li>`).join("")}</ul>
+      ${data.problems.length ? "Nothing can be done until these are solved." : `<div class="row" style="margin-top:8px"><button class="b p" id="orgDo">Do it</button>
+      <span class="hint">Files are never deleted; a name already taken becomes name_v2.</span></div>`}</div>`;
+    if (!data.problems.length) $("#orgDo").onclick = async () => {
+      $("#orgDo").disabled = true;
+      const r = await api("/api/organize/apply", {numbers, pin});
+      if (r.status !== 200) { show("err", r.data.error); return; }
+      show("ok", `Done: ${r.data.moved} item(s) moved. Changed your mind? "Undo the latest organize".`);
+      await loadOrganize();
+    };
+  };
+  $("#orgUndo").onclick = async () => {
+    if (!confirm("Put back everything the latest organize moved?")) return;
+    const r = await api("/api/organize/undo", {});
+    if (r.status !== 200) { show("err", r.data.error); return; }
+    show(r.data.skipped.length ? "warn" : "ok", `Undone: ${r.data.back} item(s) back where they were.`, r.data.skipped.map(s => "could not put back: " + s));
+    await loadOrganize();
+  };
+}
+
+/* ---------- History: the latest moves, each can be undone ---------- */
+async function loadHistory() {
+  const {status, data} = await api("/api/history");
+  if (status !== 200) { show("err", "This page has expired: run desktidy editor again."); return; }
+  const el = $("#history");
+  el.innerHTML = `<div class="card"><h2>Latest moves</h2><p class="hint">Newest first. "Undo" puts a file back where it was, with its old name; DeskTidy then leaves it there.</p>
+    ${data.moves.length ? `<table><tr><th>When</th><th>File</th><th>Now</th><th>Why</th><th></th></tr>${data.moves.map(m => `<tr>
+      <td class="mono" style="white-space:nowrap">${esc(m.time.slice(0, 16))}</td>
+      <td>${esc(m.name)}<br><small class="mono">${esc(m.from)}</small></td>
+      <td class="mono">${m.action === "MOVED" ? esc(m.to) : esc(m.action.toLowerCase().replaceAll("_", " "))}</td>
+      <td><small>${esc(m.reason)}</small></td>
+      <td style="width:80px">${m.undoable ? `<button class="b" data-undo="${esc(m.id)}" data-name="${esc(m.name)}" aria-label="Undo ${esc(m.name)}">Undo</button>` : ""}</td></tr>`).join("")}</table>`
+      : '<div class="empty">Nothing moved yet.</div>'}</div>`;
+  el.querySelectorAll("[data-undo]").forEach(b => b.onclick = async () => {
+    if (!confirm(`Put ${b.dataset.name} back where it was?`)) return;
+    const r = await api("/api/undo", {id: b.dataset.undo});
+    if (r.status !== 200) { show("err", r.data.error); return; }
+    show("ok", "Restored: " + r.data.restored);
+    await loadHistory();
+  });
+}
+
 function renderAll() {
   renderGeneral(); renderAI(); renderRules(); renderFolders(); renderExtras();
   $("#raw").value = JSON.stringify(R, null, 2);
@@ -378,6 +490,8 @@ document.querySelectorAll("#tabs button").forEach(b => b.addEventListener("click
   document.querySelectorAll("#tabs button, main section").forEach(x => x.classList.remove("on"));
   b.classList.add("on"); $("#" + b.dataset.tab).classList.add("on");
   if (b.dataset.tab === "json") $("#raw").value = JSON.stringify(R, null, 2);
+  if (b.dataset.tab === "organize") loadOrganize();
+  if (b.dataset.tab === "history") loadHistory();
 }));
 $("#applyRaw").onclick = () => {
   try { R = JSON.parse($("#raw").value); touch(); renderAll(); show("ok", "JSON applied. Press Save to keep it."); }

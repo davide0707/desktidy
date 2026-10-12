@@ -23,10 +23,12 @@ and asks you to accept them. You can read them any time with `desktidy guide`.
    puts it back with its original name. A file identical to one already in the destination goes to the Recycle Bin
    (the Trash on macOS and Linux), never deleted. Different files with the same name become `name_v2`, `name_v3`...
 
-5. **Private stays private.**
-   Files matched by a `private` rule (IDs, payslips, bills, CVs...), photos and screenshots are never sent to the AI.
-   The AI is optional (free services included: `desktidy ai provider`), used only when the offline
-   engine is unsure, with a daily limit and a total budget.
+5. **Private stays private, unless you choose otherwise.**
+   You choose how DeskTidy understands your files: with its rules alone (`desktidy ai rules`: nothing leaves your
+   computer) or always with the AI (`desktidy ai all`). Files matched by a `private` rule (IDs, payslips, bills,
+   CVs...) go to the AI only in that second case, after DeskTidy has told you where they go; with Ollama the AI runs
+   on your computer. Photos and screenshots are never sent. The AI is optional (free services included:
+   `desktidy ai provider`), with a daily limit and a total budget.
 
 6. **You're in charge.**
    `desktidy pause 1h` · `desktidy stop` · `desktidy preview` shows what would happen without moving anything ·

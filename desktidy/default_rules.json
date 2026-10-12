@@ -37,9 +37,10 @@
   "tray": true,
   "updates": { "_note": "Once a week, one anonymous request to GitHub for the latest version.", "check": true },
   "ai": {
-    "_note": "provider: groq (free) | gemini (free tier) | mistral (free plan) | openrouter (free models) | ollama (free, on this PC) | claude | openai | custom. Change it with: desktidy ai provider, then: desktidy key. mode: off | limited (files the offline engine can't place, 10/day) | moderate (also low-confidence ones, 30/day) | ai-only (every non-private file, 100/day; also fixes names that don't match the content and suggests a better organisation: desktidy advice). model: empty = the provider's default. delivery: batch (Claude only, half price, minutes) | instant. gather_seconds: files for the AI wait up to this long to share one request (90). advice: auto (ai-only mode) | on | off; advice_after_files (30), advice_every_days (7), language (empty = the language of your folder names).",
+    "_note": "provider: groq (free) | gemini (free tier) | mistral (free plan) | openrouter (free models) | ollama (free, on this PC) | claude | openai | custom. Change it with: desktidy ai provider, then: desktidy key. mode: off | limited (files the offline engine can't place, 10/day) | moderate (also low-confidence ones, 30/day) | ai-only (every non-private file, 100/day; also fixes names that don't match the content and suggests a better organisation: desktidy advice) | all (always AI: every file, private documents too, named by the AI, 100/day; photos and screenshots stay offline). redact: true = IBANs, card numbers, tax codes, VAT numbers, e-mails and phone numbers are masked before anything goes to a service on the internet (never needed for Ollama). model: empty = the provider's default. delivery: batch (Claude only, half price, minutes) | instant. gather_seconds: files for the AI wait up to this long to share one request (90). advice: auto (ai-only and all modes) | on | off; advice_after_files (30), advice_every_days (7), language (empty = the language of your folder names).",
     "provider": "groq",
     "mode": "limited",
+    "redact": true,
     "delivery": "batch",
     "gather_seconds": 90,
     "advice": "auto",

@@ -1,6 +1,6 @@
 name: Release
 
-# Push a tag like v1.3.0 (equal to desktidy.__version__): the tests run on Windows, macOS and Linux, the package is
+# Push a tag like v1.4.0 (equal to desktidy.__version__): the tests run on Windows, macOS and Linux, the package is
 # built and published to PyPI with Trusted Publishing (no token stored anywhere), and a GitHub release is created
 # with the CHANGELOG section. One-time setup on pypi.org: Publishing -> add a "pending publisher" for project
 # "desktidy", owner "davide0707", repository "desktidy", workflow "release.yml", environment "pypi".
@@ -51,6 +51,25 @@ jobs:
           name: dist
           path: dist/
 
+  windows:
+    name: Windows build (no Python needed)
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build desktidy.exe and desktidyw.exe, zip them, smoke test
+        run: powershell -ExecutionPolicy Bypass -File packaging\windows\build.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            dist/DeskTidy-*-windows.zip
+            dist/DeskTidy-*-windows.zip.sha256
+            dist/winget/
+
   pypi:
     name: Publish to PyPI
     needs: build
@@ -67,7 +86,7 @@ jobs:
 
   github:
     name: GitHub release
-    needs: pypi
+    needs: [pypi, windows]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -77,6 +96,12 @@ jobs:
         with:
           name: dist
           path: dist/
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows
+          path: windows/
+      - name: The Windows zip goes with the release (the winget manifests stay an artifact, submitted by hand)
+        run: mv windows/DeskTidy-*-windows.zip windows/DeskTidy-*-windows.zip.sha256 dist/
       - name: Notes from the CHANGELOG
         run: |
           version="${GITHUB_REF_NAME#v}"

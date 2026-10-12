@@ -15,7 +15,7 @@ import hashlib
 import os
 import re
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from . import config
 from . import content as ct
@@ -127,6 +127,114 @@ def extract(text: str, today: date | None = None) -> list[Found]:
                 found[when] = Found(when, kind_of, _amount(text, k.start()) if kind_of == "payment" else "", snippet)
             break  # only the first date after each keyword
     return sorted(found.values(), key=lambda f: f.when)[:3]
+
+
+# ---------------------------------------------------------------- the date of the document itself
+ISSUED = re.compile(r"\b(?:data(?:\s+(?:documento|fattura|emissione|di\s+emissione))?|emess[ao](?:\s+il)?|del|"
+                    r"date(?:\s+of\s+issue)?|invoice\s+date|issue\s+date|issued(?:\s+on)?|dated)\s*:?\s*$")
+ISSUE_CHARS = 2000             # where a document says its own date: the top
+
+
+def issue_date(text: str, today: date | None = None) -> date | None:
+    """The date of a document (an invoice "del 12/10/2026", a letter dated 3 March 2025), offline: the first full
+    date near the top that is not a deadline and not in the future; one right after "data", "del", "date",
+    "issued" wins. None when the text has none."""
+    today = today or date.today()
+    head = _lower(text[:ISSUE_CHARS])
+    due = set()
+    for k in KEYWORDS.finditer(head):
+        window = head[k.end():k.end() + WINDOW]
+        due |= {k.end() + m.start() for _, rx in DATES for m in rx.finditer(window)}
+    first, labelled = None, None
+    hits = sorted(((m.start(), kind, m) for kind, rx in DATES if kind != "d_month" for m in rx.finditer(head)),
+                  key=lambda x: x[0])
+    for start, kind, m in hits:
+        when = _make(kind, m, today)
+        if when is None or start in due or not date(1990, 1, 1) <= when <= today + timedelta(days=1):
+            continue
+        first = first or when
+        if ISSUED.search(head[max(0, start - 40):start]):
+            labelled = when
+            break
+    return labelled or first
+
+
+def file_date(path: str, an: ct.Analysis | None = None, ai_date: str = "") -> date:
+    """The date a dated destination ({YEAR}, {MONTH}) uses for a file: the date the AI read in the document, else
+    the one found offline in its text, else the day the file was last changed."""
+    try:
+        when = date.fromisoformat(ai_date)
+        if date(1990, 1, 1) <= when <= date.today() + timedelta(days=1):
+            return when
+    except (TypeError, ValueError):
+        pass
+    if an is not None and an.text and not an.is_dir:
+        when = issue_date(an.text)
+        if when:
+            return when
+    try:
+        return date.fromtimestamp(os.stat(path).st_mtime)
+    except OSError:
+        return date.today()
+
+
+# ---------------------------------------------------------------- to a calendar
+def _ics_text(s: str) -> str:
+    """RFC 5545 TEXT: backslash, semicolon and comma escaped, new lines as \\n."""
+    return (s.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,")
+            .replace("\r\n", "\\n").replace("\n", "\\n").replace("\r", "\\n"))
+
+
+def _fold(line: str) -> str:
+    """Lines longer than 75 octets go on with CRLF + a space, never inside a UTF-8 character."""
+    out, current = [], b""
+    for ch in line:
+        b = ch.encode("utf-8")
+        if len(current) + len(b) > (75 if not out else 74):
+            out.append(current.decode("utf-8"))
+            current = b""
+        current += b
+    out.append(current.decode("utf-8"))
+    return "\r\n ".join(out)
+
+
+def to_ics(items: list[dict], remind_days=None, now: datetime | None = None) -> str:
+    """The open deadlines as an iCalendar file (Outlook, Google Calendar, Apple Calendar...): an all-day event on
+    each date, with alarms at 9:00 on the reminder days (7, 1 and 0 days before by default). The same deadline
+    keeps the same UID, so importing again updates it instead of adding a copy."""
+    remind_days = sorted(REMIND_DAYS if remind_days is None else remind_days, reverse=True)
+    moment = now or datetime.now(timezone.utc)
+    dtstamp = (moment if moment.tzinfo else moment.astimezone()).astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//DeskTidy//Deadlines//EN", "CALSCALE:GREGORIAN",
+             "METHOD:PUBLISH", "X-WR-CALNAME:DeskTidy"]
+    for i in items:
+        if i.get("done"):
+            continue
+        day = date.fromisoformat(i["date"])
+        verb = "Pay" if i.get("kind") == "payment" else "Deadline"
+        summary = f"{verb}: {i['what']}" + (f" · {i['amount']}" if i.get("amount") else "")
+        details = "\n".join(x for x in (i.get("found", ""), i.get("path", "")) if x)
+        lines += ["BEGIN:VEVENT", f"UID:{i['id']}@desktidy", f"DTSTAMP:{dtstamp}",
+                  f"DTSTART;VALUE=DATE:{day:%Y%m%d}", f"DTEND;VALUE=DATE:{day + timedelta(days=1):%Y%m%d}",
+                  f"SUMMARY:{_ics_text(summary)}", "TRANSP:TRANSPARENT"]
+        if details:
+            lines.append(f"DESCRIPTION:{_ics_text(details)}")
+        for t in remind_days:
+            trigger = "PT9H" if t <= 0 else f"-PT{24 * t - 9}H"  # 9:00 on the day, or t days before
+            lines += ["BEGIN:VALARM", "ACTION:DISPLAY", f"DESCRIPTION:{_ics_text(summary)}", f"TRIGGER:{trigger}",
+                      "END:VALARM"]
+        lines.append("END:VEVENT")
+    lines.append("END:VCALENDAR")
+    return "\r\n".join(_fold(line) for line in lines) + "\r\n"
+
+
+def export_ics(path: str, cfg: dict | None = None) -> int:
+    """Write the open deadlines to `path`; returns how many."""
+    remind = (cfg or {}).get("deadlines", {}).get("remind_days", REMIND_DAYS)
+    items = [i for i in load() if not i.get("done")]
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        f.write(to_ics(items, remind))
+    return len(items)
 
 
 # ---------------------------------------------------------------- the list
@@ -243,8 +351,8 @@ def days_left(item: dict, today: date | None = None) -> int:
     return (date.fromisoformat(item["date"]) - (today or date.today())).days
 
 
-def when_text(item: dict) -> str:
-    n = days_left(item)
+def when_text(item: dict, today: date | None = None) -> str:
+    n = days_left(item, today)
     return {0: "today", 1: "tomorrow", -1: "yesterday"}.get(n, f"in {n} days" if n > 0 else f"{-n} days ago")
 
 
@@ -267,7 +375,7 @@ def remind(cfg: dict, notify, today: date | None = None) -> list[dict]:
         i["notified"] = sorted(notified | set(due) | ({"overdue"} if n < 0 else set()), key=str)
         what = i["what"] + (f" · {i['amount']}" if i.get("amount") else "")
         verb = "Pay" if i.get("kind") == "payment" else "Deadline"
-        title = f"{verb} {when_text(i)}" if n >= 0 else f"Overdue since {date.fromisoformat(i['date']):%d %b}"
+        title = f"{verb} {when_text(i, today)}" if n >= 0 else f"Overdue since {date.fromisoformat(i['date']):%d %b}"
         buttons = ([("Open", f"desktidy:deadline-open?id={i['id']}")] if i.get("path") else []) + \
             [("Done", f"desktidy:deadline-done?id={i['id']}")]
         notify(f"{title}: {date.fromisoformat(i['date']):%a %d %b}", what, buttons)

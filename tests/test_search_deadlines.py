@@ -2,7 +2,7 @@
 
 import json
 import os
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from unittest import mock
 
 from desktidy import ai, config, deadlines, index, service, usage
@@ -132,6 +132,48 @@ class TestDeadlines(IsolatedTest):
         item = deadlines.add(self.today + timedelta(days=30), "Bill", path=p)
         service.record("MOVED", p, self.path("dest", "bill.txt"), "test")
         self.assertEqual(deadlines.find(item["id"])["path"], self.path("dest", "bill.txt"))
+
+
+class TestCalendar(IsolatedTest):
+    """deadlines.ics: valid iCalendar (RFC 5545) that Outlook, Google and Apple calendars import."""
+
+    def setUp(self):
+        super().setUp()
+        self.bill = deadlines.add(date(2026, 10, 30), "Electricity bill; Northwind, September", "payment", "€ 84,20",
+                                  path="C:\\Docs\\Bills\\Invoice_2231.pdf", snippet="pay by 30/10/2026")
+        self.done = deadlines.add(date(2026, 11, 5), "Rent", "payment")
+        deadlines.update(self.done["id"], done=True)
+
+    def ics(self):
+        return deadlines.to_ics(deadlines.load(), now=datetime(2026, 10, 12, 8, 30, tzinfo=timezone.utc))
+
+    def test_structure(self):
+        text = self.ics()
+        self.assertTrue(text.startswith("BEGIN:VCALENDAR\r\nVERSION:2.0\r\n"))
+        self.assertTrue(text.endswith("END:VCALENDAR\r\n"))
+        self.assertNotIn("\n", text.replace("\r\n", ""))                   # CRLF only
+        self.assertEqual(text.count("BEGIN:VEVENT"), 1)                    # what is done is left out
+        unfolded = text.replace("\r\n ", "")
+        self.assertIn(f"UID:{self.bill['id']}@desktidy", unfolded)
+        self.assertIn("DTSTART;VALUE=DATE:20261030", unfolded)
+        self.assertIn("DTEND;VALUE=DATE:20261031", unfolded)
+        self.assertIn("DTSTAMP:20261012T083000Z", unfolded)
+        self.assertIn("SUMMARY:Pay: Electricity bill\\; Northwind\\, September · € 84\\,20", unfolded)
+        self.assertIn("DESCRIPTION:pay by 30/10/2026\\nC:\\\\Docs\\\\Bills\\\\Invoice_2231.pdf", unfolded)
+        self.assertEqual([ln for ln in unfolded.split("\r\n") if ln.startswith("TRIGGER")],
+                         ["TRIGGER:-PT159H", "TRIGGER:-PT15H", "TRIGGER:PT9H"])   # 9:00 on 7 days, 1 day, the day
+
+    def test_lines_are_folded_at_75_octets_without_breaking_characters(self):
+        deadlines.add(date(2026, 12, 1), "Rinnovo assicurazione è più caro: " + "àèìòù " * 30, "deadline")
+        for line in self.ics().split("\r\n"):
+            self.assertLessEqual(len(line.encode("utf-8")), 75)
+            line.encode("utf-8").decode("utf-8")
+
+    def test_export_and_the_command(self):
+        out = self.path("cal", "x.ics")
+        self.assertEqual(deadlines.export_ics(out), 1)
+        with open(out, "rb") as f:
+            self.assertIn(b"\r\nEND:VCALENDAR\r\n", f.read())
 
 
 class TestAIAnswerExtras(IsolatedTest):
