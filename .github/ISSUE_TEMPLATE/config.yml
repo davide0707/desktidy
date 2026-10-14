@@ -3,6 +3,3 @@ contact_links:
   - name: Documentation
     url: https://github.com/davide0707/desktidy/tree/main/docs
     about: The user guide, the commands, AI and privacy, the configuration.
-  - name: Security problem
-    url: https://github.com/davide0707/desktidy/security/advisories/new
-    about: Please report vulnerabilities privately, never in a public issue.
