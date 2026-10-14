@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """The AI: mode, service and key, the AI test, spend, organisation advice."""
 
 from __future__ import annotations

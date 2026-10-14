@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """Masking before a text goes to an AI service on the internet: what is masked (and checked), what is left alone,
 and that every request really goes through it. No network."""
 

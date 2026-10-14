@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """Shared test tools: an isolated data folder, sample files and a test configuration."""
 
 import json

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """Organize: the crowded folders, what the AI reads (never private files), the plan, applying it and undoing it.
 The AI is a fake that answers from the item names it is shown."""
 

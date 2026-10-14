@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """How the console looks and asks: colors, messages, questions, the banner, and what the commands share
 (starting and stopping the service, a folder typed by the user). INTERACTIVE and GUI live here: one state
 for every module (cli.ui.INTERACTIVE)."""

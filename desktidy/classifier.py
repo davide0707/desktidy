@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """Where does a file belong? Everything is decided on the PC first; the AI is only consulted when the chosen
 AI mode allows it and the offline answer is missing or weak.
 

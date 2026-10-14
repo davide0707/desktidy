@@ -8,7 +8,7 @@ dynamic = ["version"]
 description = "Keeps Downloads, Desktop and Documents tidy on Windows, macOS and Linux: understands what each file is about, renames it and files it in the right folder - offline first, with a free or paid AI (Groq, Gemini, Ollama, Claude, OpenAI...) only when needed."
 readme = "README.md"
 requires-python = ">=3.10"
-license = "MIT"
+license = "GPL-3.0-or-later"
 license-files = ["LICENSE"]
 authors = [{ name = "Di Filippo Davide" }]
 keywords = ["file-organizer", "downloads", "desktop", "automation", "windows", "macos", "linux", "ocr", "claude",
@@ -69,4 +69,4 @@ ignore = ["E731", "B904", "B905", "SIM105", "SIM108", "SIM905"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["E501"]
-"docs/*" = ["E501"]
+"scripts/*" = ["E501"]   # the demo image lines

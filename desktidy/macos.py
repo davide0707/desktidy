@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """macOS: the tools every Mac has. Notifications and dialogs through osascript (terminal-notifier, if installed, makes
 notifications clickable), the Trash through the `trash` command or Foundation, autostart with a launchd agent,
 volumes in /Volumes, apps in /Applications, the screen through CoreGraphics and OCR with the Vision framework

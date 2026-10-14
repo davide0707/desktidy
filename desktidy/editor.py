@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """Settings in the browser (`desktidy editor`): rules, AI, limits, renaming, archive, deadlines and the other
 options of rules.json in a page instead of a JSON file. Nothing to install and nothing online: a tiny web server
 on 127.0.0.1 that only this computer can reach, open while the command runs.

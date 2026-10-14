@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """The DeskTidy icon next to the clock: state at a glance in the tooltip, and a menu with the latest moves, upcoming
 deadlines, advice, search, pause and resume, settings. Turn it off with "tray": false in rules.json.
 

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """desktidy ai test: the made-up documents, the scoring, and that the test is hermetic (your pinned folders stay
 out, the temporary folder is deleted, nothing counts against the daily file limit). The AI is a fake."""
 

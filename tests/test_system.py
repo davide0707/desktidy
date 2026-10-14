@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """System-facing features, tested without touching the real system: installers already installed (fake program
 list), the archive, photo import (a fake memory card), the right-click menu (Windows: under a test registry key;
 Linux: in a temporary folder), the desktidy: links, the settings editor (a real local server), the tray menu and

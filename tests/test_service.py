@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """Full passes of the service in a test folder: it really moves, renames and restores, but only in there."""
 
 import os

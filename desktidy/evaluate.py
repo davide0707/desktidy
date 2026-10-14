@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """How well does the chosen AI service sort and name files? `desktidy ai test` sends 18 made-up documents (never
 yours: invoices, bills, a payslip, lecture notes, a contract, a recipe, a flight booking...) to the service and
 compares its answers with the right ones: the folder, the name, the date of the document and the deadline.

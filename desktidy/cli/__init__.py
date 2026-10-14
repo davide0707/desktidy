@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """DeskTidy command line: an interactive console (menu) and one-shot commands.
 
   desktidy                 open the console

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """The new commands, as a user types them: limit, ai max, find, deadlines, tidy, handsoff, undo by id, the
 desktidy: links, advice apply and undo, and the console-less entry point used by Explorer and notifications."""
 

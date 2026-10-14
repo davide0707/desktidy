@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """The operating system behind one small interface. Windows (winapi.py), macOS (macos.py) and Linux (linux.py)
 each provide the same functions; macOS and Linux share what they have in common (posix.py). Single instance, files
 in use, the Trash, notifications and dialogs, opening files, autostart at sign-in, the `desktidy` command, API keys,

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """Learning from your corrections. When DeskTidy puts a file in the wrong place and you move it yourself (or undo
 the move and then put the file somewhere), that is a correction. Corrections that point to the same folder and
 share words become a proposed rule: "files about 'oscilloscope, probe' go to Study\\Lab". You accept it with one

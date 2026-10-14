@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """Search by content: `desktidy find electricity bill september` finds a file by what it says, not by its name.
 
 Every file DeskTidy tidies is added to a local full-text index (SQLite FTS5, part of Python): its name, title,

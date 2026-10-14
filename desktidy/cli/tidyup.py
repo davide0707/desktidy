@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """Tidy-up tools: deadlines, groups, organize, versions, installers, duplicates, archive, photo import, learning."""
 
 from __future__ import annotations

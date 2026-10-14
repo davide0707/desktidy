@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """Automatic archive: what lies untouched for months on the Desktop or in the to-sort folder goes to
 Archive/<year> (optionally compressed into a .zip), so the places you look at every day stay clean.
 

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """Sensitive numbers masked before a text leaves this computer for an AI service on the internet.
 
   IT60 X054 2811 1010 0000 0123 456   ->  [IBAN]        (only if it passes the IBAN check, mod 97)

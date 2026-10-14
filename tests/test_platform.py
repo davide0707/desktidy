@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """The system layer: every platform module offers the whole interface, and the macOS / Linux pieces that are plain
 Python (the Trash specification, user-dirs.dirs, .deb packages, .desktop files, launchd agents, API keys, the
 `desktidy` command, the lock file) work as specified. Most of them run on every system; a few need a real Unix."""

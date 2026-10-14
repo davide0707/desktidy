@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """Files: where did they go, undo, search, pinned folders, explain, preview, renaming, tidy one file now."""
 
 from __future__ import annotations

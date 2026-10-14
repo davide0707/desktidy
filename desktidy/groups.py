@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """The to-sort pile, grouped: the files DeskTidy could not place often have something in common ("8 files talk
 about stm32, nucleo, gpio"). This module finds those groups offline and proposes where they should go: an
 existing folder that looks like them, or a new folder (that can be pinned, so the next ones go there by themselves).

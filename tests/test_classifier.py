@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """Where a file goes: name, content, recognised kinds, generic rules, pinned folders, AI modes."""
 
 import os

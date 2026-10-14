@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """AI spend and credit, configuration helpers, and the command line (durations, aliases, pause, undo)."""
 
 import io

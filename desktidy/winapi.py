@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """Windows: single instance, files in use, Recycle Bin, notifications, dialogs, the user environment (API keys, PATH),
 Task Scheduler, the registry, known folders, drives, installed programs, the screen and the built-in OCR.
 Everything here is a thin wrapper around a Windows API or tool (see system.py for the shared interface)."""

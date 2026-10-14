@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """What macOS and Linux share (see system.py): a lock file for the single instance, API keys in a private file,
 the `desktidy` command in ~/.local/bin, hidden files, terminals and the small helpers to run system tools."""
 

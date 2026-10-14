@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """The tray icon on Windows (the menu itself is in tray.py): plain Win32 through ctypes (Shell_NotifyIcon + a hidden
 window + its message loop, on its own thread of the background service), no extra library."""
 

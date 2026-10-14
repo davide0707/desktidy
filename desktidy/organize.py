@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """Organize: what lies loose in a folder, grouped into folders by the AI. Fifty files on the Desktop? The AI sees
 that ten are about the thesis, six about the trip to Japan and four are bills, and proposes: a new folder Thesis,
 a new folder Japan_trip, the bills to the folder where your bills already are. Nothing moves until you say so.

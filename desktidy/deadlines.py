@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """Deadlines: a bill "to be paid by 30 October", an enrolment "no later than 15/11/2026", a contract that "expires
 on 2027-01-31". DeskTidy finds the date (and the amount, when there is one) in every document it tidies, offline,
 in Italian and English; the AI is used only when it is reading the file anyway and the date is written in a way

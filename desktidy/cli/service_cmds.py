@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """The background service: status, the week, pause and resume, start and stop, autostart, the daily limit."""
 
 from __future__ import annotations

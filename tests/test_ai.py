@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """The AI request: compact, several files per request, short folder list; and the answer parsing.
 No network: nothing here calls Anthropic."""
 

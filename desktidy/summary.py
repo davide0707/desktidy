@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """The week in one notification: files tidied and renamed, duplicates and installers sent to the Recycle Bin, moves
 you undid, the deadlines of the coming week, what waits in the to-sort pile, the AI's work and spend.
 

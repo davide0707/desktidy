@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """The weekly summary: what it counts, when it comes (once a week, on the chosen day or the first pass after it),
 and that a quiet week says nothing."""
 

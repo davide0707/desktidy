@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """Daily limits, the search index (desktidy find), deadlines found in documents, and the AI's summary and date."""
 
 import json

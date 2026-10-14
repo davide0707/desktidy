@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """Understand files and folders WITHOUT AI: everything runs on the PC, for free, and nothing is sent anywhere.
 
 What it can do:

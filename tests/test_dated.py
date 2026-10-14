@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """Dated destinations: {DOCS}/Bills/{YEAR}/{MONTH} filled in from the date of each document (read by the AI,
 found offline in the text, or the day the file was last changed)."""
 

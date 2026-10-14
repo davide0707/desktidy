@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """Other AI services: presets, request conversion, the fallback ladder and a full answer, against a fake
 OpenAI-compatible server running on localhost (no real service is contacted)."""
 

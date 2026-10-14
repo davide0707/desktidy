@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """The AI, only when needed and as cheaply as possible: Claude, OpenAI, Gemini, Groq, Mistral, OpenRouter or a
 local model through Ollama (see providers.py).
 

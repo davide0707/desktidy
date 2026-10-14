@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """Duplicates across your folders: the same file, byte for byte, in two or more places (the photo copied twice, the
 PDF downloaded again, the backup of a backup).
 

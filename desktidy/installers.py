@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """Installers you no longer need: setup files of programs that are already installed, in the same or a newer
 version (.exe and .msi on Windows, .dmg and .pkg on macOS, .deb and .rpm on Linux). Often hundreds of MB each.
 

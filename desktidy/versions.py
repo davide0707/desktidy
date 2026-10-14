@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """Old versions of the same document: "Report.docx", "Report_v2.docx", "Report_final.docx",
 "Report_final_REALLY.docx", "Report (1).docx". The newest one stays where it is; the older ones can go into an
 "_old_versions" subfolder, so the folder shows one file per document and nothing is lost.

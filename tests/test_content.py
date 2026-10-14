@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """Understanding content without AI: words, document text, images, code, folders and zip files."""
 
 import codecs

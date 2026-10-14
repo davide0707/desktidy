@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """Destination folders: the list of candidates, what each one is about, pinned folders, and the short list
 of likely folders sent to the AI (instead of the whole tree: most of the tokens saved come from here).
 

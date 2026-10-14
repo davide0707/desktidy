@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """Linux (and the other Unix-like desktops): the freedesktop.org standards wherever there is one. User folders from
 user-dirs.dirs, the Trash specification, notifications (notify-send, with buttons), XDG autostart (or a systemd user
 service without a desktop), removable media mounted by udisks, dpkg/rpm packages, Tesseract OCR. Every tool is

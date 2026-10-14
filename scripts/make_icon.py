@@ -1,6 +1,8 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """Draws desktidy/icon.ico (Windows: Explorer menu, tray, notifications) and desktidy/icon.png (Linux: notifications,
 autostart, file manager menus): a folder with a check mark on a rounded square.
-Run it again only to change the icon:  python docs/make_icon.py"""
+Run it again only to change the icon:  python scripts/make_icon.py"""
 
 import os
 

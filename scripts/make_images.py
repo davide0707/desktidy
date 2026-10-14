@@ -1,16 +1,20 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """Regenerates docs/demo.svg (terminal demo for the README) and docs/social-preview.png (GitHub link preview).
 
-    python docs/make_images.py
+    python scripts/make_images.py
 """
 
 import html
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)
+from desktidy import __version__  # noqa: E402
 from desktidy.cli import LOGO  # noqa: E402
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+HERE = os.path.join(ROOT, "docs")  # where the images go
 COLORS = {"c": "#22d3ee", "b": "#60a5fa", "m": "#c084fc", "g": "#4ade80", "y": "#facc15", "r": "#f87171",
           "w": "#f8fafc", "d": "#64748b", "t": "#cbd5e1"}
 
@@ -18,7 +22,7 @@ COLORS = {"c": "#22d3ee", "b": "#60a5fa", "m": "#c084fc", "g": "#4ade80", "y": "
 LINES = [[("c", " " + LOGO[0])], [("c", " " + LOGO[1])], [("b", " " + LOGO[2])], [("b", " " + LOGO[3])],
          [("m", " " + LOGO[4])], [("m", " " + LOGO[5])],
          [("d", " " + "─" * 64)],
-         [("w", "   DeskTidy"), ("d", " v1.0.0  ::  "), ("t", "your files, sorted while you work")],
+         [("w", "   DeskTidy"), ("d", f" v{__version__}  ::  "), ("t", "your files, sorted while you work")],
          [("d", "   by "), ("g", "Di Filippo Davide"), ("d", "  ·  github.com/davide0707/desktidy")],
          [("d", " " + "─" * 64)],
          [("g", "   ● RUNNING"), ("d", "   |   "), ("t", "AI: "), ("c", "moderate"), ("d", "   |   "), ("t", "AI spend: $0.05")],
@@ -79,10 +83,11 @@ def social_png() -> None:
         draw.text((70, 70 + i * 30), line, font=mono, fill=colors[i])
     draw.text((70, 290), "Your files, sorted while you work.", font=bold, fill="#f8fafc")
     for i, text in enumerate(["Understands each file's content - offline, OCR included",
-                              "Renames 'scan0001.pdf' after what's inside",
-                              "Free AI (Groq, Gemini, Ollama) or Claude, only when needed"]):
+                              "Renames 'scan0001.pdf' after what's inside, files it, every move undoable",
+                              "Rules only, or always AI: free (Groq, Gemini, Ollama) or paid - you choose"]):
         draw.text((74, 400 + i * 46), "●  " + text, font=regular, fill="#cbd5e1")
-    draw.text((74, 560), "github.com/davide0707/desktidy  ·  Windows 10/11  ·  MIT", font=regular, fill="#64748b")
+    draw.text((74, 560), "github.com/davide0707/desktidy  ·  Windows · macOS · Linux  ·  GPLv3", font=regular,
+              fill="#64748b")
     im.save(os.path.join(HERE, "social-preview.png"), optimize=True)
 
 

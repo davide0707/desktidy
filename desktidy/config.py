@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """Data files, settings (rules.json) and the small helpers shared by the service, the CLI and the engines."""
 
 from __future__ import annotations

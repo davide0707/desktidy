@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """The background service: every few seconds it looks at the watched folders and files away what is new.
 
 It starts at sign-in, without a window (Task Scheduler on Windows, a launchd agent on macOS, the desktop's autostart

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """More: the settings editor, the right-click menu, updates, the log, rules.json, install and uninstall, about."""
 
 from __future__ import annotations
@@ -8,7 +10,7 @@ import shutil
 import subprocess
 import sys
 
-from .. import APP_NAME, REPO_URL, __author__, __version__, config, folders, system
+from .. import APP_NAME, REPO_URL, __author__, __license__, __version__, config, folders, system
 from ..explorer import console_command, service_command
 from ..service import move_id, read_moves
 from . import ui
@@ -271,7 +273,7 @@ def cmd_about(args):
     row("Version", __version__)
     row("Author", __author__)
     row("Project", REPO_URL)
-    row("License", "MIT")
+    row("License", f"{__license__}: free software, with NO WARRANTY (see LICENSE)")
     row("Program", os.path.dirname(sys.executable) + " (Windows build)" if system.FROZEN else
         str(config.PACKAGE_DIR.parent))
     row("Data", str(config.data_dir()))

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """The file manager's right-click menu, for the current user only (no administrator rights):
 
   * on files: Tidy now · Explain · Hands off (adds or removes the "!")

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """Smart renaming: generic names, names that don't match the content, titles."""
 
 import unittest

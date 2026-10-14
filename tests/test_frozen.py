@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """The Windows build (PyInstaller: desktidy.exe + desktidyw.exe, no Python on the PC): the service command, the
 --service entry, updates by download, installing into %LOCALAPPDATA%\\Programs\\DeskTidy and removing it again.
 Nothing here touches the registry, PATH or the Task Scheduler: those calls are replaced."""

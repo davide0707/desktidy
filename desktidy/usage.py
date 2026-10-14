@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """AI spend: per day, per model, budget, declared credit and the reasons to pause the AI.
 
 Costs are computed from the token counts Anthropic returns with every answer, so they match the bill

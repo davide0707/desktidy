@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """New versions: once a week DeskTidy asks GitHub for the latest release (one anonymous request, nothing about you
 is sent) and shows a notification when there is a newer one. `desktidy update` checks now and updates the way
 DeskTidy was installed: git clone (git pull + pip), pipx or pip. Turn the weekly check off with

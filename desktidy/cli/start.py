@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """Start here: the house rules and the first-run setup (pinned folders, daily limit, rules only or always AI)."""
 
 from __future__ import annotations

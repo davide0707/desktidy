@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 # PyInstaller spec of the Windows build: one folder, DeskTidy\, with desktidy.exe (console) and desktidyw.exe
 # (no window) sharing the same libraries. Built by build.ps1; nothing else is needed on the PC (no Python).
 import os

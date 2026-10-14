@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """Changes to whole folders, applied from the organisation advice (`desktidy advice apply <n>`): merge, rename,
 move, archive, create, pin, remove empty folders.
 

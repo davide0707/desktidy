@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """Smart renaming: when a file's name says nothing ("scan0001.pdf", "Document1.docx", "download (3).pdf")
 or doesn't match what the file contains, give it a name taken from its content.
 

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """Duplicates across the user's folders: what counts as a copy, which copy stays, and that cleaning only ever
 sends verified, unchanged copies to the Recycle Bin. Everything inside a temporary folder."""
 

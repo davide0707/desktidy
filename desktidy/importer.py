@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """Photos and videos from a memory card or USB stick: when one with a DCIM folder is plugged in, DeskTidy offers to
 import the new pictures (notification with an "Import" button), sorted by the date they were taken:
 Pictures/2026/2026-10/IMG_2034.jpg, Videos/2026/2026-10/MVI_0042.mp4 (Movies on macOS).

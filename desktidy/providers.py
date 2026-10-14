@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """The AI services DeskTidy can use. Claude is called through its official SDK; every other service speaks the
 OpenAI-compatible chat API, so one small HTTP client (standard library only) covers them all.
 

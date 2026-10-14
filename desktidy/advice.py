@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """Organisation advice: once DeskTidy has an overview of your files, the AI suggests how to organise them better
 (merge overlapping folders, split overloaded ones, clearer names, an archive, a pinned folder for what keeps landing
 in To_Sort...).

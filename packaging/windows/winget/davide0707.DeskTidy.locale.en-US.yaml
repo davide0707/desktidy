@@ -6,7 +6,7 @@ Publisher: Di Filippo Davide
 PublisherUrl: https://github.com/davide0707
 PackageName: DeskTidy
 PackageUrl: https://github.com/davide0707/desktidy
-License: MIT
+License: GPL-3.0-or-later
 LicenseUrl: https://github.com/davide0707/desktidy/blob/main/LICENSE
 ShortDescription: Keeps Downloads, Desktop and Documents tidy - understands each file, renames it and files it in the right folder.
 Description: |-

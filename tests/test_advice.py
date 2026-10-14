@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """Organisation advice: the overview of the folders (what the AI would read), the offline findings, when the advice
 is due and the parsing of the tips. No network: the request itself is tested in test_providers."""
 

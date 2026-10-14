@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Di Filippo Davide
 """Tools that change folders: applying organisation tips (and undoing them), grouping the to-sort pile, old
 versions of a document, and learning rules from the user's corrections. All inside temporary folders."""
 
