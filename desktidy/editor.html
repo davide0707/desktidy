@@ -172,7 +172,7 @@ function limit(label, path, hint, autoText) {
       ${autoText ? `<option value="auto" ${mode === "auto" ? "selected" : ""}>${esc(autoText)}</option>` : ""}
       <option value="unlimited" ${mode === "unlimited" ? "selected" : ""}>Unlimited</option>
       <option value="number" ${mode === "number" ? "selected" : ""}>At most...</option></select>
-      <input type="number" min="0" data-limit-n="${path}" value="${mode === "number" ? v : ""}" style="width:110px" ${mode === "number" ? "" : "disabled"}> files a day</div></label>`;
+      <input type="number" min="0" data-limit-n="${path}" value="${mode === "number" ? esc(v) : ""}" style="width:110px" ${mode === "number" ? "" : "disabled"}> files a day</div></label>`;
 }
 function bind(root) {
   root.querySelectorAll("[data-path]").forEach(el => el.addEventListener(el.type === "checkbox" ? "change" : "input", () => {

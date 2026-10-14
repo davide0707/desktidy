@@ -98,6 +98,7 @@ ocr_engine = _get("ocr_engine")                   # () -> name of the OCR engine
 
 
 def mask(key: str | None) -> str:
+    """An API key as it may be shown: enough to tell which one it is (first and last 4 characters), never more."""
     if not key:
         return "(none)"
-    return key[:12] + "..." + key[-4:] if len(key) > 20 else "***"
+    return key[:4] + "..." + key[-4:] if len(key) > 20 else "***"

@@ -5,6 +5,11 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+- The settings page (`desktidy editor`) escapes the daily limits read from `rules.json` like every other value: a
+  crafted `rules.json` could put HTML in the page. Found by CodeQL.
+- API keys are shown by their first and last 4 characters only (it was the first 12).
+
 ### Fixed
 - With `pinned_folders.wait_seconds` set to `0`, a folder just created could be skipped by the pin suggestions until
   the next pass on Windows, where the clock can read a few milliseconds behind the folder's creation time.

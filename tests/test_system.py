@@ -3,11 +3,12 @@
 """System-facing features, tested without touching the real system: installers already installed (fake program
 list), the archive, photo import (a fake memory card), the right-click menu (Windows: under a test registry key;
 Linux: in a temporary folder), the desktidy: links, the settings editor (a real local server), the tray menu and
-the update check (no network)."""
+the update check (no network), and how an API key is shown."""
 
 import io
 import json
 import os
+import re
 import threading
 import time
 import unittest
@@ -274,6 +275,14 @@ class TestEditor(IsolatedTest):
         self.assertEqual(self.call("/api/state", host="evil.example:80")[0], 403)    # DNS rebinding
         self.assertEqual(self.call("/api/save", {"rules": []}, token=False)[0], 403)
 
+    def test_the_page_escapes_the_values_it_shows(self):
+        """Every value of rules.json put into a field goes through esc() (or is a number): it can't become HTML."""
+        page = self.call(f"/?t={self.server.token}")[1]
+        values = re.findall(r'value="\$\{(.*?)\}"', page)
+        self.assertGreater(len(values), 5)
+        for v in values:
+            self.assertRegex(v, r"\besc\(|^Math\.round\(", v)
+
     def test_state_validate_save(self):
         status, body = self.call("/api/state")
         data = json.loads(body)["rules"]
@@ -406,3 +415,11 @@ class TestUpdates(IsolatedTest):
     def test_offline(self):
         with mock.patch.object(updates.urllib.request, "urlopen", side_effect=urllib.error.URLError("offline")):
             self.assertIsNone(updates.latest())
+
+
+class TestKeyMask(unittest.TestCase):
+    def test_a_key_is_shown_by_its_ends_only(self):
+        key = "gsk_" + "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKL" + "WXYZ"
+        self.assertEqual(system.mask(key), "gsk_...WXYZ")
+        self.assertEqual(system.mask("short-key"), "***")
+        self.assertEqual(system.mask(None), "(none)")
