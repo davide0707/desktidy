@@ -7,6 +7,9 @@ build/
 dist/
 .ruff_cache/
 
+# Local backup copies of the project (never published)
+/DeskTidy.zip
+
 # Personal data: DeskTidy keeps it in %LOCALAPPDATA%\DeskTidy, these entries are only a safety net
 rules.json
 moves.csv
