@@ -125,8 +125,9 @@ registers it from there; `update` sends the user to the download page; `uninstal
 1. Update `__version__` in `desktidy/__init__.py` and add the section to `CHANGELOG.md` (`## [x.y.z] - date`).
 2. Commit, tag and push: `git tag vX.Y.Z && git push origin main vX.Y.Z`.
 3. The [release workflow](../.github/workflows/release.yml) runs the tests on Windows, macOS and Linux, checks that
-   the tag matches the version, builds the wheel, the source archive and the Windows zip, and creates the GitHub
-   release with the CHANGELOG section as notes.
+   the tag matches the version, builds the wheel, the source archive and the Windows zip, writes their checksums to
+   `SHA256SUMS`, attests their build provenance, and creates the GitHub release with the CHANGELOG section as notes.
+   Build provenance attestations need the repository to be public: tag a release only once it is.
 
 **PyPI** (optional, one-time setup): on [pypi.org](https://pypi.org/manage/account/publishing/) add a *pending
 publisher* for project `desktidy`, owner `davide0707`, repository `desktidy`, workflow `release.yml`, environment

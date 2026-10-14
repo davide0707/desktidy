@@ -14,8 +14,11 @@ body:
     attributes:
       label: How could it work?
   - type: checkboxes
-    id: offline
+    id: principles
     attributes:
-      label: Offline first
+      label: DeskTidy's principles
+      description: Not required, but ideas that keep them are easier to accept.
       options:
-        - label: This could work without the AI
+        - label: This could work without the AI (offline first)
+        - label: Nothing new would leave the computer, or the idea says what and why
+        - label: Every change it makes could be undone

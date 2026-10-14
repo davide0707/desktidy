@@ -40,8 +40,11 @@ dev = ["ruff>=0.6"]
 
 [project.urls]
 Homepage = "https://github.com/davide0707/desktidy"
+Documentation = "https://github.com/davide0707/desktidy/tree/main/docs"
+Source = "https://github.com/davide0707/desktidy"
 Issues = "https://github.com/davide0707/desktidy/issues"
 Changelog = "https://github.com/davide0707/desktidy/blob/main/CHANGELOG.md"
+Releases = "https://github.com/davide0707/desktidy/releases"
 
 [project.scripts]
 desktidy = "desktidy.cli:main"

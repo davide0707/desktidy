@@ -11,6 +11,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/davide0707/desktidy/releases/latest"><img src="https://img.shields.io/github/v/release/davide0707/desktidy?label=release" alt="Latest release"></a>
   <a href="https://github.com/davide0707/desktidy/actions/workflows/ci.yml"><img src="https://github.com/davide0707/desktidy/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <img src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?logo=windows" alt="Windows 10 | 11">
   <img src="https://img.shields.io/badge/macOS-11%2B-000000?logo=apple" alt="macOS 11+">
@@ -163,8 +164,12 @@ All the commands: [command reference](docs/commands.md).
 
 ## Contributing
 
-Bug reports, ideas, rules in other languages and pull requests are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md).
-Security problems: please follow [SECURITY.md](SECURITY.md).
+Bug reports, ideas, rules in other languages and pull requests are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md)
+and the [code of conduct](CODE_OF_CONDUCT.md). Security problems: please follow [SECURITY.md](SECURITY.md).
+
+Every release lists the SHA-256 of its files in `SHA256SUMS` and carries a GitHub build provenance attestation:
+`gh attestation verify DeskTidy-1.4.0-windows.zip -R davide0707/desktidy` proves a download was built here, from this
+source.
 
 ## License
 

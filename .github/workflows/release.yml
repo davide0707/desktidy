@@ -95,6 +95,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write       # build provenance attestations
+      attestations: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -106,7 +108,13 @@ jobs:
           name: windows
           path: windows/
       - name: The Windows zip goes with the release (the winget manifests stay an artifact, submitted by hand)
-        run: mv windows/DeskTidy-*-windows.zip windows/DeskTidy-*-windows.zip.sha256 dist/
+        run: mv windows/DeskTidy-*-windows.zip dist/
+      - name: Checksums of every file of the release
+        run: cd dist && sha256sum -- * > SHA256SUMS && cat SHA256SUMS
+      - name: Build provenance (verify a download with gh attestation verify <file> -R davide0707/desktidy)
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: "dist/*"
       - name: Notes from the CHANGELOG
         run: |
           version="${GITHUB_REF_NAME#v}"

@@ -1,5 +1,14 @@
 # Security policy
 
+## Supported versions
+
+Security fixes go into the latest release. Please update (`desktidy update`) before reporting.
+
+| Version | Supported |
+|---|---|
+| 1.4.x | yes |
+| older | no |
+
 ## Reporting a vulnerability
 
 Please **do not** open a public issue for security problems. Use GitHub's

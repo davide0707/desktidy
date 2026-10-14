@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+message: "If you use DeskTidy in your work, please cite it as below."
+title: "DeskTidy"
+abstract: >-
+  Keeps Downloads, Desktop and Documents tidy: understands what each file is about (offline, or with an AI service
+  of the user's choice), gives it a proper name and files it in the right folder. Windows, macOS and Linux.
+type: software
+authors:
+  - family-names: "Di Filippo"
+    given-names: "Davide"
+    alias: "davide0707"
+version: "1.4.0"
+date-released: "2026-10-14"
+license: GPL-3.0-or-later
+repository-code: "https://github.com/davide0707/desktidy"
+url: "https://github.com/davide0707/desktidy"
+keywords:
+  - file organizer
+  - automation
+  - productivity
+  - OCR
+  - artificial intelligence
+  - privacy
