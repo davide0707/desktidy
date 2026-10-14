@@ -3,7 +3,7 @@
 All notable changes to DeskTidy are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/)
 and the project uses [Semantic Versioning](https://semver.org/).
 
-## [1.4.0] - 2026-10-14
+## [1.4.0] - 2026-10-15
 
 DeskTidy is now free software under the **GNU General Public License v3.0 or later** (it was MIT).
 
