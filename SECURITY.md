@@ -18,7 +18,9 @@ You will get an answer within a week.
   short list of folder names are sent to the AI service you chose (with Ollama, nothing leaves your computer).
   Photos and screenshots are never sent. Files matched by a `private` rule are sent only in the `all` mode ("Always
   AI"), which the user chooses explicitly; before the first one goes to a service on the internet DeskTidy names the
-  service and asks.
+  service and asks. Before any request leaves the computer, IBANs, card numbers, tax codes, VAT numbers, e-mails and
+  phone numbers are masked (`redact.py`, on by default); names and addresses are not. Details:
+  [docs/ai-and-privacy.md](docs/ai-and-privacy.md).
 - Organisation advice (`desktidy advice`, automatic only in the `ai-only` and `all` modes) sends folder names, file counts and types
   and two file names per folder (none from folders of `private` rules), never the content of a file.
 - Text inside files is treated as data: the AI is instructed to ignore any instruction written in a file, and its

@@ -32,8 +32,11 @@
     "enabled": true, "auto": false, "photos": "{PICTURES}", "videos": "{VIDEOS}",
     "pattern": "{year}/{year}-{month}", "delete_after": false
   },
-  "learn": { "_note": "Corrections (files you moved yourself) needed before a rule is proposed (desktidy learn).", "min_examples": 2 },
+  "learn": { "_note": "Corrections (files you moved yourself) needed before a rule is proposed, and files the AI put in the same folder (left there 3 days) before a rule is proposed from them (desktidy learn).", "min_examples": 2, "min_ai_examples": 5 },
   "groups": { "_note": "Files with something in common needed to propose a group of the to-sort pile (desktidy groups).", "min_files": 3 },
+  "organize": { "_note": "Loose items that make a folder crowded (desktidy organize).", "min_items": 10 },
+  "duplicates": { "_note": "Smaller files are not compared (desktidy duplicates).", "min_size_kb": 512 },
+  "summary": { "_note": "The weekly summary notification (desktidy week): weekly true/false, day monday...sunday.", "weekly": true, "day": "monday" },
   "tray": true,
   "updates": { "_note": "Once a week, one anonymous request to GitHub for the latest version.", "check": true },
   "ai": {

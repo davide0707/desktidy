@@ -1,9 +1,13 @@
 name: Release
 
-# Push a tag like v1.4.0 (equal to desktidy.__version__): the tests run on Windows, macOS and Linux, the package is
-# built and published to PyPI with Trusted Publishing (no token stored anywhere), and a GitHub release is created
-# with the CHANGELOG section. One-time setup on pypi.org: Publishing -> add a "pending publisher" for project
-# "desktidy", owner "davide0707", repository "desktidy", workflow "release.yml", environment "pypi".
+# Push a tag like v1.4.0 (equal to desktidy.__version__): the tests run on Windows, macOS and Linux, the package and
+# the Windows build (no Python needed) are built, and a GitHub release is created with the CHANGELOG section, the
+# wheel, the source archive and the Windows zip.
+#
+# PyPI (optional): once set up, the package is also published there with Trusted Publishing (no token stored
+# anywhere). One-time setup: on pypi.org, Publishing -> add a "pending publisher" for project "desktidy", owner
+# "davide0707", repository "desktidy", workflow "release.yml", environment "pypi"; then on GitHub, Settings ->
+# Secrets and variables -> Actions -> Variables, add PYPI_PUBLISH = true.
 
 on:
   push:
@@ -73,6 +77,7 @@ jobs:
   pypi:
     name: Publish to PyPI
     needs: build
+    if: vars.PYPI_PUBLISH == 'true'   # off until the one-time setup above is done
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
@@ -86,7 +91,7 @@ jobs:
 
   github:
     name: GitHub release
-    needs: [pypi, windows]
+    needs: [build, windows]
     runs-on: ubuntu-latest
     permissions:
       contents: write

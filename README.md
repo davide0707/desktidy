@@ -102,6 +102,10 @@ pipx install "desktidy[ai]"
 desktidy install
 ```
 
+If pipx can't find `desktidy` on PyPI, install it straight from GitHub:
+`pipx install git+https://github.com/davide0707/desktidy` (for Claude add `pipx inject desktidy anthropic`), then
+`desktidy install`.
+
 <details><summary>Getting pipx, or installing from the source</summary>
 
 | Windows | macOS | Linux |

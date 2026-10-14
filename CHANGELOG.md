@@ -3,30 +3,63 @@
 All notable changes to DeskTidy are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/)
 and the project uses [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.4.0] - 2026-10-14
+
+DeskTidy is now free software under the **GNU General Public License v3.0 or later** (it was MIT).
 
 ### Added
-- **`desktidy organize`**: the crowded folders among yours (Desktop, Downloads, Documents, the to-sort pile, the
-  pinned folders), and for any of them a plan from the AI that groups the loose items into folders: new ones, or
-  folders you already have. `organize apply <n | all>` after a preview, `organize undo` puts everything back.
-  Private files, photos and screenshots are never sent; what the rules place with certainty is placed offline.
-
 - **Rules only or always AI: you choose.** The setup asks how DeskTidy should understand your files: with its rules
   alone (`desktidy ai rules`, nothing leaves your computer) or always with the AI (`desktidy ai all`). The new `all`
   mode sends every file to the AI, bills, payslips and IDs included, and the AI names the files the rules would
-  rename (`scan0001.pdf` becomes `Fattura_2231_Acme_Srl_2026-10-12.pdf`); photos, screenshots and programs stay
+  rename (`scan0001.pdf` becomes `Fattura_2231_Acme_Srl_2026-09-30.pdf`); photos, screenshots and programs stay
   offline. Before private documents go to a service on the internet DeskTidy names it and asks; with Ollama they
   never leave the computer. The existing modes are unchanged: `ai-only` still keeps private files offline.
+- **Masking**: IBANs, card numbers, Italian tax codes, VAT numbers, e-mails and phone numbers are replaced before
+  anything goes to an AI service on the internet (checked by their check digits, so amounts and dates stay).
+  `"ai": {"redact": true}` by default; names and addresses are not masked.
+- **`desktidy organize`**: the crowded folders among yours (Desktop, Downloads, Documents, the to-sort pile, the
+  pinned folders), and for any of them a plan that groups the loose items into folders, new ones or folders you
+  already have: by the AI, or offline (`--offline`, or when there is no AI). `organize apply <n | all>` after a
+  preview, `organize undo` puts everything back. Also from the right-click menu (folders, the empty space of a
+  folder, the Desktop) and from the browser.
+- **Folders by year**: `{YEAR}` and `{MONTH}` in a destination, filled in from the date of each document (read by the
+  AI, found in its text, or the day it was last changed).
+- **`desktidy duplicates`**: identical files across your folders; one copy stays, the others go to the Recycle Bin /
+  Trash after you confirm. Hard links, files only in the cloud, code projects and the folders of programs are never
+  touched.
+- **`desktidy deadlines ics`**: the deadlines as a calendar file (Outlook, Google Calendar, Apple Calendar) with the
+  same reminders.
+- **`desktidy week`** and a weekly summary notification: files tidied, duplicates, deadlines of the week, the AI.
+- **Rules learned from the AI**: five files the AI put in the same folder and you left there become a proposed rule,
+  so the next ones are placed offline.
+- **`desktidy ai test`**: 18 made-up documents sent to the chosen service and scored (folder, name, document date,
+  deadline); `--dry` shows what would be sent without sending it.
+- **Organize and History tabs** in `desktidy editor`: the plan with a preview, do it, undo; the latest moves, each
+  with *Undo*.
+- **The Windows build**: a zip with `desktidy.exe` and `desktidyw.exe` that needs no Python; `desktidy.exe install`
+  copies it to `%LOCALAPPDATA%\Programs\DeskTidy`. Built and attached to every GitHub release; winget manifests.
+- Documentation in `docs/`: user guide, AI and privacy, commands, configuration, development.
 
 ### Changed
+- License: GPL-3.0-or-later, with an SPDX header in every source file.
 - AI names for invoices, bills, receipts and other dated documents: the kind, the number, who issued it and the
-  document date (`Fattura_2231_Acme_Srl_2026-10-12`).
+  document date.
 - House rule 5 is now "Private stays private, unless you choose otherwise".
 - `desktidy ai always` and `ai all` now choose the new `all` mode (they meant `ai-only` before); `ai rules` = `off`.
 - `advice undo` (and `organize undo`) goes on when an item can't be put back because it was moved or deleted in the
   meantime, and lists it; an item whose old name was taken comes back as `name_v2`.
+- `desktidy rules check` runs the same checks as saving in the editor.
+- The console code is split into the `desktidy.cli` package (no change for users).
+- The GitHub release no longer depends on PyPI: publishing there is optional (`PYPI_PUBLISH`).
 
 ### Fixed
+- The folders of programs inside Documents (game saves, settings, code snippets) are never organised, moved by the
+  advice or deduplicated.
+- `explain --ai` never sends a private file to the AI unless you chose always AI.
+- A local AI service (Ollama, custom) moved to another machine with `ai.base_url` is no longer treated as local.
+- An unknown `{VARIABLE}` in a rule destination never creates a folder with that name: the file stays and the log
+  says why.
+- Rules learned from corrections into a private folder are private too.
 - Deadline reminders say "in N days" from the day they are computed for, not always from today.
 - A watched folder with `wait_seconds: 0` no longer skips a file whose time is a few microseconds in the future
   (Windows).
@@ -148,6 +181,8 @@ First public release.
   `key`, `log`, `rules`, `open`, `install`, `uninstall`, `about`.
 - Test suite (no network, temporary folders only) and GitHub Actions CI.
 
-[1.2.0]: https://github.com/davide0707/desktidy/releases/tag/v1.2.0
-[1.1.0]: https://github.com/davide0707/desktidy/releases/tag/v1.1.0
-[1.0.0]: https://github.com/davide0707/desktidy/releases/tag/v1.0.0
+[1.4.0]: https://github.com/davide0707/desktidy/releases/tag/v1.4.0
+[1.3.0]: https://github.com/davide0707/desktidy/tree/2920375e89c8a9222904580d72d2abfcc067de9e
+[1.2.0]: https://github.com/davide0707/desktidy/tree/8a2f8f8bef25f6f6b46a067d1c6539ad15a1e9e9
+[1.1.0]: https://github.com/davide0707/desktidy/tree/cd73bbd009b0e470d65a7d7195d18a9b5088949f
+[1.0.0]: https://github.com/davide0707/desktidy/tree/fa5940fca8c042c838ca5d1cb344819be88711df

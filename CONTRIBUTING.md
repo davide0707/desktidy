@@ -1,6 +1,6 @@
 # Contributing to DeskTidy
 
-Thanks for helping! Bug reports, ideas, new rules and pull requests are all welcome.
+Thanks for helping! Bug reports, ideas, rules in other languages and pull requests are all welcome.
 
 ## Getting started
 
@@ -18,34 +18,26 @@ Run the checks before opening a pull request (Windows: `.venv\Scripts\...`):
 .venv/bin/ruff check .
 ```
 
-Tests use temporary folders, a temporary `DESKTIDY_HOME` and `{HOME}`, `{DOCS}` and the other user folders pointing
-inside them; they never call the AI or the internet and never touch your real files, registry or autostart entries
-(the Explorer menu test uses a test registry key, the Linux menus and autostart tests a temporary folder). The CI runs
-them on Windows, macOS and Linux. To try the service without moving anything:
-`.venv/bin/python -m desktidy.service --dry-run --now`.
-
-## Where the system-specific code lives
-
-Everything that depends on the operating system goes through `desktidy/system.py`, one small interface implemented
-by `winapi.py` (Windows), `macos.py` and `linux.py`, with what macOS and Linux share in `posix.py`. The rest of
-DeskTidy is plain Python: a new feature that needs the system adds one function to the interface, implemented for all
-three (or stepping back quietly where the system can't do it), and a test in `tests/test_platform.py`.
+The tests are isolated: temporary folders, no AI, no internet, never your real files, registry or autostart entries.
+[docs/development.md](docs/development.md) explains the project layout, the conventions and how the Windows build and
+the releases work.
 
 ## Guidelines
 
-- **Offline first.** New understanding belongs in `content.py` / `classifier.py`; the AI is the last resort.
-- **Spend nothing by accident.** Any change to `ai.py` must keep requests compact; say in the pull request how it
-  affects the tokens sent per file (`client.messages.count_tokens` is free).
-- **Never surprise the user.** Moves must stay logged and undoable; files starting with `!`, open files and private
-  files must stay untouched.
+- **Never surprise the user.** Moves stay logged and undoable; files starting with `!`, open files and private files
+  stay untouched; folder changes show a plan first; anything that removes a file sends it to the Recycle Bin / Trash
+  after a confirmation.
+- **Offline first.** New understanding belongs in `content.py` / `classifier.py`; the AI is an option.
+- **Private stays private.** Nothing new is sent to an AI service without saying so in
+  [docs/ai-and-privacy.md](docs/ai-and-privacy.md), and every request goes through `redact.outgoing()`.
+- **Spend nothing by accident.** Keep AI requests compact; say in the pull request how a change to `ai.py` affects
+  the tokens sent per file.
 - **Keep it readable.** Small functions, clear names, a docstring where the *why* isn't obvious.
-- **Never act behind the user's back.** Folder changes show a plan first and can be undone; anything that deletes
-  goes to the Recycle Bin / Trash after a confirmation.
-- Add or update a test for every behaviour change, and a line in `CHANGELOG.md`.
+- **Test it.** Add or update a test for every behaviour change, and a line in `CHANGELOG.md`.
 
 ## Good first issues
 
-- More bundled rules and keywords (other languages welcome).
+- More bundled rules and keywords (other languages welcome) in `desktidy/default_rules.json`.
 - More file formats in `content.py`.
 - More deadline phrasings (other languages) in `deadlines.py`.
 - Translations of the console and notifications.
@@ -54,16 +46,15 @@ three (or stepping back quietly where the system can't do it), and a test in `te
 
 Open an issue with your system (Windows, macOS or Linux and its version, and the desktop on Linux), the output of
 `desktidy about` and `desktidy log errors`, and, if possible, `desktidy explain <file>` for the file that went wrong.
-Please remove personal paths and names first.
+Please remove personal paths and names first. Security problems: see [SECURITY.md](SECURITY.md).
 
-## Releasing
+## License of contributions
 
-1. Update `__version__` in `desktidy/__init__.py` and add the section to `CHANGELOG.md` (`## [x.y.z] - date`).
-2. Commit, then tag and push: `git tag vX.Y.Z && git push origin main vX.Y.Z`.
-3. The [release workflow](.github/workflows/release.yml) runs the tests on Windows, macOS and Linux, checks that the
-   tag matches the version, builds the package, publishes it to PyPI and creates the GitHub release with the
-   CHANGELOG section as notes.
+DeskTidy is licensed under the [GNU General Public License v3.0 or later](LICENSE). By contributing you agree that
+your contributions are licensed under the same terms. New source files start with the license identifier and their
+author:
 
-One-time setup on [pypi.org](https://pypi.org/manage/account/publishing/): add a *pending publisher* for project
-`desktidy`, owner `davide0707`, repository `desktidy`, workflow `release.yml`, environment `pypi`. No token is stored
-anywhere (Trusted Publishing).
+```python
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) <year> <your name>
+```
