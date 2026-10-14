@@ -10,13 +10,13 @@ from datetime import date
 from unittest import mock
 
 from desktidy import cli, config, deadlines, service, summary
-from tests.helpers import IsolatedTest
+from tests.helpers import IsolatedTest, native
 
 MONDAY = date(2026, 10, 12)
 
 
 def row(day, action, src, dst, reason):
-    return {"time": f"{day} 10:00:00", "action": action, "source": src, "destination": dst, "reason": reason}
+    return {"time": f"{day} 10:00:00", "action": action, "source": src, "destination": native(dst), "reason": reason}
 
 
 class TestWeek(IsolatedTest):

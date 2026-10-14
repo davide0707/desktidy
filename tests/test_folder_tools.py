@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from unittest import mock
 
 from desktidy import config, folders, groups, learn, ops, service, versions
-from tests.helpers import IsolatedTest
+from tests.helpers import IsolatedTest, native
 
 
 class TestApplyTips(IsolatedTest):
@@ -32,7 +32,7 @@ class TestApplyTips(IsolatedTest):
         self.assertEqual(sorted(os.listdir(self.dest("Bills"))), ["2026", "a.txt", "a_v2.txt"])
         self.assertFalse(os.path.exists(self.dest("Bollette")))
         rules = config.load_config(self.cfg.source)["rules"]
-        self.assertEqual(rules[0]["destination"], "{D}\\Bills")                  # the rule follows, with its variable
+        self.assertEqual(rules[0]["destination"], native("{D}\\Bills"))          # the rule follows, with its variable
         self.assertEqual([p.path for p in folders.active_pinned()], [self.dest("Bills")])
         self.assertEqual(ops.current_path(self.dest("Bollette", "2026", "b.txt")), self.dest("Bills", "2026", "b.txt"))
         self.assertTrue(entry["changes"])
@@ -141,12 +141,12 @@ class TestLearn(IsolatedTest):
         proposals = learn.scan(cfg)
         self.assertEqual(len(proposals), 1)
         rule = proposals[0]["rule"]
-        self.assertEqual(rule["destination"], "{D}\\Study\\Lab")
+        self.assertEqual(rule["destination"], native("{D}\\Study\\Lab"))
         self.assertIn("oscilloscope", [w.lower() for w in rule["topics"]])
         self.assertEqual(learn.scan(cfg), [])                              # each move is looked at once
         learn.accept(1)
         with open(cfg.source, encoding="utf-8") as f:
-            self.assertEqual(json.load(f)["rules"][0]["destination"], "{D}\\Study\\Lab")
+            self.assertEqual(json.load(f)["rules"][0]["destination"], native("{D}\\Study\\Lab"))
         self.assertEqual(learn.load()["proposals"], [])
 
     def test_a_correction_into_a_private_folder_makes_a_private_rule(self):
@@ -205,7 +205,7 @@ class TestLearnFromTheAI(IsolatedTest):
         p = proposals[0]
         self.assertEqual(p["source"], "ai")
         self.assertEqual(p["count"], 5)
-        self.assertEqual(p["rule"]["destination"], "{D}\\Hobby\\Astronomy")
+        self.assertEqual(p["rule"]["destination"], native("{D}\\Hobby\\Astronomy"))
         self.assertIn("eyepiece", [w.lower() for w in p["rule"]["topics"]])
         self.assertNotIn("private", p["rule"])
         self.assertTrue(p["rule"]["name"].startswith("Learned from the AI"))
