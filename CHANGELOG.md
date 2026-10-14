@@ -3,6 +3,12 @@
 All notable changes to DeskTidy are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/)
 and the project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- With `pinned_folders.wait_seconds` set to `0`, a folder just created could be skipped by the pin suggestions until
+  the next pass on Windows, where the clock can read a few milliseconds behind the folder's creation time.
+
 ## [1.4.0] - 2026-10-15
 
 DeskTidy is now free software under the **GNU General Public License v3.0 or later** (it was MIT).
@@ -181,6 +187,7 @@ First public release.
   `key`, `log`, `rules`, `open`, `install`, `uninstall`, `about`.
 - Test suite (no network, temporary folders only) and GitHub Actions CI.
 
+[Unreleased]: https://github.com/davide0707/desktidy/compare/v1.4.0...HEAD
 [1.4.0]: https://github.com/davide0707/desktidy/releases/tag/v1.4.0
 [1.3.0]: https://github.com/davide0707/desktidy/tree/2920375e89c8a9222904580d72d2abfcc067de9e
 [1.2.0]: https://github.com/davide0707/desktidy/tree/8a2f8f8bef25f6f6b46a067d1c6539ad15a1e9e9

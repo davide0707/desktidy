@@ -115,7 +115,9 @@ class TestPass(ServiceTest):
         self.assertTrue(self.svc.questions.empty())
         for name in ("pasta", "New folder", "!private"):
             os.makedirs(os.path.join(desktop, name))
-        self.svc.suggest_pins(cfg)
+        # the clock a little behind the folder's creation time, as with Python 3.10 on Windows: still suggested
+        with mock.patch.object(folders.time, "time", return_value=os.stat(os.path.join(desktop, "pasta")).st_ctime - 0.01):
+            self.svc.suggest_pins(cfg)
         self.assertEqual(self.svc.questions.get_nowait(), os.path.join(desktop, "pasta"))
         self.assertTrue(self.svc.questions.empty())
         self.svc.suggest_pins(cfg)                    # asked only once

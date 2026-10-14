@@ -487,7 +487,10 @@ def suggestions(cfg: config.Config, include_seen: bool = False, wait: bool = Tru
                     continue
                 if system.is_hidden(e) or DEFAULT_FOLDER_NAMES.match(e.name):
                     continue
-                if os.path.normcase(e.path) in known or time.time() - e.stat().st_ctime < min_age:
+                if os.path.normcase(e.path) in known:
+                    continue
+                # min_age > 0: a folder just made can carry a time a few milliseconds ahead of time.time() (Windows)
+                if min_age > 0 and time.time() - e.stat().st_ctime < min_age:
                     continue
             except OSError:
                 continue
