@@ -1,5 +1,8 @@
 blank_issues_enabled: false
 contact_links:
+  - name: Questions and ideas
+    url: https://github.com/davide0707/desktidy/discussions
+    about: How do I...? Would it make sense to...? Ask and talk it over in the Discussions.
   - name: Documentation
     url: https://github.com/davide0707/desktidy/tree/main/docs
     about: The user guide, the commands, AI and privacy, the configuration.

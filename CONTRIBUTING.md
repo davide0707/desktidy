@@ -2,6 +2,9 @@
 
 Thanks for helping! Bug reports, ideas, rules in other languages and pull requests are all welcome.
 
+A question, or an idea you'd like to talk over first? Start a thread in
+[Discussions](https://github.com/davide0707/desktidy/discussions): issues are for bugs and concrete feature requests.
+
 ## Getting started
 
 ```sh

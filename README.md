@@ -165,7 +165,9 @@ All the commands: [command reference](docs/commands.md).
 ## Contributing
 
 Bug reports, ideas, rules in other languages and pull requests are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md)
-and the [code of conduct](CODE_OF_CONDUCT.md). Security problems: please follow [SECURITY.md](SECURITY.md).
+and the [code of conduct](CODE_OF_CONDUCT.md). Questions and ideas to talk over: the
+[Discussions](https://github.com/davide0707/desktidy/discussions). Security problems: please follow
+[SECURITY.md](SECURITY.md).
 
 Every release lists the SHA-256 of its files in `SHA256SUMS` and carries a GitHub build provenance attestation:
 `gh attestation verify DeskTidy-1.4.0-windows.zip -R davide0707/desktidy` proves a download was built here, from this
