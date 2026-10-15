@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/demo.svg" alt="The DeskTidy console: where did my invoice go, and how much did the AI cost" width="880">
+  <img src="https://raw.githubusercontent.com/davide0707/desktidy/main/docs/demo.svg" alt="The DeskTidy console: where did my invoice go, and how much did the AI cost" width="880">
 </p>
 
 <h1 align="center">DeskTidy</h1>
@@ -17,7 +17,7 @@
   <img src="https://img.shields.io/badge/macOS-11%2B-000000?logo=apple" alt="macOS 11+">
   <img src="https://img.shields.io/badge/Linux-GNOME%20%7C%20KDE%20%7C%20more-FCC624?logo=linux&logoColor=black" alt="Linux">
   <img src="https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white" alt="Python 3.10+">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="GPLv3 license"></a>
+  <a href="https://github.com/davide0707/desktidy/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="GPLv3 license"></a>
 </p>
 
 ---
@@ -61,7 +61,7 @@ Ollama running on your own computer) or paid (Claude, OpenAI) for a fraction of 
 **Never surprises you**
 - Every move and rename is logged and undoable, one file or a whole plan at a time. Nothing is ever deleted:
   duplicates go to the Recycle Bin / Trash.
-- [Six house rules](docs/house-rules.md) you accept at setup: names starting with `!` are never touched; nothing
+- [Six house rules](https://github.com/davide0707/desktidy/blob/main/docs/house-rules.md) you accept at setup: names starting with `!` are never touched; nothing
   moves until you have pinned two folders; open and unfinished files are skipped; nothing is lost; private stays
   private unless you choose otherwise; you're in charge (pause, stop, preview, daily limit).
 - Folders of programs (game saves, settings) are never reorganised.
@@ -81,7 +81,7 @@ The setup asks how DeskTidy should understand your files, and you can change it 
 
 Three levels in between use the AI only for the files the rules can't place. With **Ollama** the AI runs on your own
 computer, so even *Always AI* sends nothing anywhere. `desktidy ai test` shows how well a service does on 18 made-up
-documents before you trust it with yours. Details: [AI and privacy](docs/ai-and-privacy.md).
+documents before you trust it with yours. Details: [AI and privacy](https://github.com/davide0707/desktidy/blob/main/docs/ai-and-privacy.md).
 
 ## Install
 
@@ -98,7 +98,7 @@ start at sign-in and the right-click menu, then starts the setup.
 
 > The exe is not code-signed yet, so the first time Windows may say *Windows protected your PC*: click
 > **More info** → **Run anyway**. To be sure the zip is the one built here, compare its SHA-256 with `SHA256SUMS` in
-> the release, or [verify its attestation](#contributing).
+> the release, or [verify its attestation](https://github.com/davide0707/desktidy#contributing).
 
 **Windows, macOS and Linux, with Python 3.10+** and [pipx](https://pipx.pypa.io/):
 
@@ -107,9 +107,9 @@ pipx install "desktidy[ai]"
 desktidy install
 ```
 
-If pipx can't find `desktidy` on PyPI, install it straight from GitHub:
-`pipx install git+https://github.com/davide0707/desktidy` (for Claude add `pipx inject desktidy anthropic`), then
-`desktidy install`.
+`[ai]` adds the library for Claude; the other AI services need nothing more. The latest development version, straight
+from GitHub: `pipx install git+https://github.com/davide0707/desktidy` (for Claude add
+`pipx inject desktidy anthropic`).
 
 <details><summary>Getting pipx, or installing from the source</summary>
 
@@ -153,34 +153,34 @@ desktidy deadlines               # bills and deadlines found in your documents
 desktidy editor                  # every setting in your browser
 ```
 
-All the commands: [command reference](docs/commands.md).
+All the commands: [command reference](https://github.com/davide0707/desktidy/blob/main/docs/commands.md).
 
 ## Documentation
 
 | | |
 |---|---|
-| [User guide](docs/guide.md) | how DeskTidy decides, renaming, organize, the tidy-up tools, search, deadlines, the desktop integration, FAQ |
-| [AI and privacy](docs/ai-and-privacy.md) | the modes, the services and their costs, what is sent and what never is, masking, the AI test |
-| [Commands](docs/commands.md) | every command and option |
-| [Configuration](docs/configuration.md) | `rules.json`, rules, variables, folders by year, where your data lives |
-| [House rules](docs/house-rules.md) | the six promises DeskTidy keeps |
-| [Development](docs/development.md) | the code, the tests, building the Windows version, releasing |
+| [User guide](https://github.com/davide0707/desktidy/blob/main/docs/guide.md) | how DeskTidy decides, renaming, organize, the tidy-up tools, search, deadlines, the desktop integration, FAQ |
+| [AI and privacy](https://github.com/davide0707/desktidy/blob/main/docs/ai-and-privacy.md) | the modes, the services and their costs, what is sent and what never is, masking, the AI test |
+| [Commands](https://github.com/davide0707/desktidy/blob/main/docs/commands.md) | every command and option |
+| [Configuration](https://github.com/davide0707/desktidy/blob/main/docs/configuration.md) | `rules.json`, rules, variables, folders by year, where your data lives |
+| [House rules](https://github.com/davide0707/desktidy/blob/main/docs/house-rules.md) | the six promises DeskTidy keeps |
+| [Development](https://github.com/davide0707/desktidy/blob/main/docs/development.md) | the code, the tests, building the Windows version, releasing |
 
 ## Contributing
 
-Bug reports, ideas, rules in other languages and pull requests are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md)
-and the [code of conduct](CODE_OF_CONDUCT.md). Questions and ideas to talk over: the
+Bug reports, ideas, rules in other languages and pull requests are welcome: see [CONTRIBUTING.md](https://github.com/davide0707/desktidy/blob/main/CONTRIBUTING.md)
+and the [code of conduct](https://github.com/davide0707/desktidy/blob/main/CODE_OF_CONDUCT.md). Questions and ideas to talk over: the
 [Discussions](https://github.com/davide0707/desktidy/discussions). Security problems: please follow
-[SECURITY.md](SECURITY.md).
+[SECURITY.md](https://github.com/davide0707/desktidy/blob/main/SECURITY.md).
 
 Every release lists the SHA-256 of its files in `SHA256SUMS` and carries a GitHub build provenance attestation:
-`gh attestation verify DeskTidy-1.4.0-windows.zip -R davide0707/desktidy` proves a download was built here, from this
+`gh attestation verify DeskTidy-1.4.1-windows.zip -R davide0707/desktidy` proves a download was built here, from this
 source.
 
 ## License
 
 DeskTidy is free software: you can redistribute it and/or modify it under the terms of the
-[GNU General Public License](LICENSE) as published by the Free Software Foundation, either version 3 of the License,
+[GNU General Public License](https://github.com/davide0707/desktidy/blob/main/LICENSE) as published by the Free Software Foundation, either version 3 of the License,
 or (at your option) any later version. It is distributed in the hope that it will be useful, but **without any
 warranty**.
 

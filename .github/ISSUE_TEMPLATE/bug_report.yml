@@ -24,7 +24,7 @@ body:
     attributes:
       label: DeskTidy version and system
       description: The first lines of `desktidy about` (version, system, Python)
-      placeholder: "DeskTidy 1.4.0 · Windows 11 24H2 / macOS 15.5 / Ubuntu 24.04 (GNOME)"
+      placeholder: "DeskTidy 1.4.1 · Windows 11 24H2 / macOS 15.5 / Ubuntu 24.04 (GNOME)"
     validations:
       required: true
   - type: dropdown

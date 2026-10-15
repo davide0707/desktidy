@@ -3,9 +3,13 @@
 All notable changes to DeskTidy are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/)
 and the project uses [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.4.1] - 2026-10-15
+
+A security fix for the settings page; we recommend updating.
 
 ### Added
+- DeskTidy is on [PyPI](https://pypi.org/project/desktidy/): `pipx install "desktidy[ai]"`. Published from the
+  release workflow with Trusted Publishing (no token stored anywhere).
 - The Windows exes carry their name, version and copyright (file Properties): Task Manager and the startup apps show
   "DeskTidy" instead of `desktidyw.exe`.
 - [Discussions](https://github.com/davide0707/desktidy/discussions) for questions and ideas.
@@ -197,7 +201,7 @@ First public release.
   `key`, `log`, `rules`, `open`, `install`, `uninstall`, `about`.
 - Test suite (no network, temporary folders only) and GitHub Actions CI.
 
-[Unreleased]: https://github.com/davide0707/desktidy/compare/v1.4.0...HEAD
+[1.4.1]: https://github.com/davide0707/desktidy/releases/tag/v1.4.1
 [1.4.0]: https://github.com/davide0707/desktidy/releases/tag/v1.4.0
 [1.3.0]: https://github.com/davide0707/desktidy/tree/2920375e89c8a9222904580d72d2abfcc067de9e
 [1.2.0]: https://github.com/davide0707/desktidy/tree/8a2f8f8bef25f6f6b46a067d1c6539ad15a1e9e9

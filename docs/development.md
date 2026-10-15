@@ -139,10 +139,10 @@ authentication on GitHub and SignPath, a signing step in the release workflow (e
    `SHA256SUMS`, attests their build provenance, and creates the GitHub release with the CHANGELOG section as notes.
    Build provenance attestations need the repository to be public: tag a release only once it is.
 
-**PyPI** (optional, one-time setup): on [pypi.org](https://pypi.org/manage/account/publishing/) add a *pending
-publisher* for project `desktidy`, owner `davide0707`, repository `desktidy`, workflow `release.yml`, environment
-`pypi`; then in the GitHub repository settings add the Actions variable `PYPI_PUBLISH` = `true`. From then on every
-release is published to PyPI too, with Trusted Publishing: no token is stored anywhere.
+**PyPI**: every release is published to PyPI too, with Trusted Publishing: no token is stored anywhere. PyPI trusts
+the workflow `release.yml` of `davide0707/desktidy` in the environment `pypi`, which only `v*.*.*` tags may deploy
+to; the Actions variable `PYPI_PUBLISH` = `true` turns the job on (a fork without it skips PyPI and still makes its
+GitHub release).
 
 **winget** (by hand, once per release): the release run keeps the filled-in manifests as the `windows` artifact.
 Submit them to [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs) (for example with

@@ -8,7 +8,7 @@ version. It is distributed in the hope that it will be useful, but WITHOUT ANY W
 warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the LICENSE file for details.
 """
 
-__version__ = "1.4.0"
+__version__ = "1.4.1"
 __author__ = "Di Filippo Davide"
 __license__ = "GPL-3.0-or-later"
 
