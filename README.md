@@ -96,6 +96,10 @@ desktidy.exe install
 It copies itself to `%LOCALAPPDATA%\Programs\DeskTidy` (no administrator rights), adds the `desktidy` command, the
 start at sign-in and the right-click menu, then starts the setup.
 
+> The exe is not code-signed yet, so the first time Windows may say *Windows protected your PC*: click
+> **More info** → **Run anyway**. To be sure the zip is the one built here, compare its SHA-256 with `SHA256SUMS` in
+> the release, or [verify its attestation](#contributing).
+
 **Windows, macOS and Linux, with Python 3.10+** and [pipx](https://pipx.pypa.io/):
 
 ```sh

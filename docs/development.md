@@ -120,6 +120,16 @@ version, the download address and the hash (`dist\winget\<version>\`). The scrip
 `desktidy.exe install` copies the program to `%LOCALAPPDATA%\Programs\DeskTidy` (replacing an older version) and
 registers it from there; `update` sends the user to the download page; `uninstall` removes the program folder too.
 
+Both exes carry a version resource (product name `DeskTidy`, the version, the copyright; the description is what
+Task Manager and the startup apps show), set in `desktidy.spec` from `__version__` and checked by the smoke test.
+
+**Code signing** (not yet): the exes are unsigned, so SmartScreen warns on first run. The plan is
+[SignPath Foundation](https://signpath.org/), free for open-source projects, once DeskTidy has the reputation they
+ask for. What their [conditions](https://signpath.org/terms) require and DeskTidy already has: an OSI license, builds
+from source in CI, the version resource above, an uninstaller, privacy documented. What is still to do then: two-factor
+authentication on GitHub and SignPath, a signing step in the release workflow (each release approved by hand), and a
+"Code signing policy" section in the README.
+
 ## Releasing
 
 1. Update `__version__` in `desktidy/__init__.py` and add the section to `CHANGELOG.md` (`## [x.y.z] - date`).

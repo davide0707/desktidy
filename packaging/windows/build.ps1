@@ -28,6 +28,13 @@ $env:DESKTIDY_HOME = Join-Path $root "build\smoke-home"
 $printed = & (Join-Path $out "DeskTidy\desktidy.exe") --version
 if ($LASTEXITCODE -ne 0 -or $printed -notmatch [regex]::Escape($version)) { throw "desktidy.exe --version: $printed" }
 Remove-Item Env:DESKTIDY_HOME
+# the version resource (file Properties, Task Manager, code signing): product name and version on both exes
+foreach ($exe in "desktidy.exe", "desktidyw.exe") {
+    $info = (Get-Item (Join-Path $out "DeskTidy\$exe")).VersionInfo
+    if ($info.ProductName -ne "DeskTidy" -or $info.ProductVersion -ne $version) {
+        throw "$exe version resource: '$($info.ProductName)' '$($info.ProductVersion)'"
+    }
+}
 
 $zip = Join-Path $dist "DeskTidy-$version-windows.zip"
 if (Test-Path $zip) { Remove-Item $zip }

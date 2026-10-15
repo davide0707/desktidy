@@ -5,6 +5,11 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- The Windows exes carry their name, version and copyright (file Properties): Task Manager and the startup apps show
+  "DeskTidy" instead of `desktidyw.exe`.
+- [Discussions](https://github.com/davide0707/desktidy/discussions) for questions and ideas.
+
 ### Security
 - The settings page (`desktidy editor`) escapes the daily limits read from `rules.json` like every other value: a
   crafted `rules.json` could put HTML in the page. Found by CodeQL.
